@@ -1,0 +1,49 @@
+# SSH Configuration with build tags
+
+# Common settings for all hosts
+Host *
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+    StrictHostKeyChecking ask
+    UserKnownHostsFile ~/.ssh/known_hosts
+
+# {linux-
+Host production
+    HostName prod.example.com
+    User deploy
+    IdentityFile ~/.ssh/id_rsa_prod
+    ForwardAgent yes
+    Port 22
+
+Host staging
+    HostName staging.example.com
+    User ubuntu
+    IdentityFile ~/.ssh/id_rsa_staging
+    Port 2222
+# -linux}
+
+# {macos-
+Host production
+    HostName prod.example.com
+    User deploy
+    IdentityFile ~/.ssh/id_rsa_prod
+    ForwardAgent yes
+    Port 22
+    UseKeychain yes
+    AddKeysToAgent yes
+
+Host staging
+    HostName staging.example.com
+    User admin
+    IdentityFile ~/.ssh/id_rsa_staging
+    Port 2222
+    UseKeychain yes
+    AddKeysToAgent yes
+# -macos}
+
+# Development server (common)
+Host dev
+    HostName dev.example.com
+    User developer
+    IdentityFile ~/.ssh/id_rsa_dev
+    Port 22

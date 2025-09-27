@@ -1,0 +1,56 @@
+[app]
+name = "MyApp"
+version = "1.0.0"
+
+[database]
+host = "localhost"
+port = 5432
+
+# {linux-
+[database]
+driver = "postgresql"
+ssl_mode = "require"
+
+[paths]
+data_dir = "/var/lib/myapp"
+log_dir = "/var/log/myapp"
+config_dir = "/etc/myapp"
+
+[system]
+user = "myapp"
+group = "myapp"
+# -linux}
+
+# {macos-
+[database]
+driver = "postgresql"
+ssl_mode = "prefer"
+
+[paths]
+data_dir = "/usr/local/var/myapp"
+log_dir = "/usr/local/var/log/myapp"
+config_dir = "/usr/local/etc/myapp"
+
+[system]
+user = "_myapp"
+group = "staff"
+# -macos}
+
+# {windows-
+[database]
+driver = "postgresql"
+ssl_mode = "disable"
+
+[paths]
+data_dir = "C:\\ProgramData\\MyApp"
+log_dir = "C:\\ProgramData\\MyApp\\logs"
+config_dir = "C:\\ProgramData\\MyApp\\config"
+
+[system]
+user = "NT AUTHORITY\\SYSTEM"
+group = "Users"
+# -windows}
+
+[logging]
+level = "info"
+format = "json"

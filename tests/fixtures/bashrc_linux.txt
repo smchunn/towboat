@@ -1,0 +1,31 @@
+# Linux-specific bash configuration
+export PATH=$PATH:/usr/local/bin:/snap/bin
+
+# Aliases for Linux
+alias ll='ls -alF --color=auto'
+alias la='ls -A --color=auto'
+alias l='ls -CF --color=auto'
+alias grep='grep --color=auto'
+
+# Linux package manager shortcuts
+alias apt-update='sudo apt update && sudo apt upgrade'
+alias apt-search='apt search'
+alias snap-list='snap list'
+
+# Development tools
+export EDITOR=vim
+export BROWSER=firefox
+
+# History configuration
+HISTSIZE=10000
+HISTFILESIZE=20000
+shopt -s histappend
+
+# Git aliases
+alias gs='git status'
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+alias gl='git log --oneline'
+
+echo "Linux bash configuration loaded"

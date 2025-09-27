@@ -1,0 +1,35 @@
+# macOS-specific bash configuration
+export PATH=/usr/local/bin:/opt/homebrew/bin:$PATH
+
+# Aliases for macOS
+alias ll='ls -alF -G'
+alias la='ls -A -G'
+alias l='ls -CF -G'
+alias grep='grep --color=auto'
+
+# macOS package manager shortcuts
+alias brew-update='brew update && brew upgrade'
+alias brew-search='brew search'
+alias brew-list='brew list'
+
+# Development tools
+export EDITOR=nano
+export BROWSER=safari
+
+# History configuration
+HISTSIZE=10000
+HISTFILESIZE=20000
+set -o history
+
+# Git aliases
+alias gs='git status'
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+alias gl='git log --oneline'
+
+# macOS specific
+alias finder='open -a Finder'
+alias code='open -a "Visual Studio Code"'
+
+echo "macOS bash configuration loaded"

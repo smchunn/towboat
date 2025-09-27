@@ -1,0 +1,58 @@
+[user]
+    name = Test User
+    email = test@example.com
+
+[core]
+    autocrlf = input
+    quotepath = false
+
+# {linux-
+[core]
+    editor = vim
+    pager = less
+
+[alias]
+    co = checkout
+    br = branch
+    ci = commit
+    st = status
+    unstage = reset HEAD --
+    last = log -1 HEAD
+    visual = !gitk
+# -linux}
+
+# {macos-
+[core]
+    editor = nano
+    pager = less
+
+[alias]
+    co = checkout
+    br = branch
+    ci = commit
+    st = status
+    unstage = reset HEAD --
+    last = log -1 HEAD
+    visual = !gitx
+# -macos}
+
+# {windows-
+[core]
+    editor = notepad
+    autocrlf = true
+
+[alias]
+    co = checkout
+    br = branch
+    ci = commit
+    st = status
+    unstage = reset HEAD --
+    last = log -1 HEAD
+    visual = !gitk
+# -windows}
+
+[push]
+    default = simple
+
+[pull]
+    rebase = true
