@@ -1,0 +1,28 @@
+# Example boat.toml configuration file for towboat
+# This file should be placed in your dotfiles directory
+
+[files]
+# Map of source files to target paths and build tags
+# Format: "source_file" = { target = "target_path", tags = ["tag1", "tag2"] }
+
+".bashrc" = { target = ".bashrc", tags = ["linux", "macos"] }
+".zshrc" = { target = ".zshrc", tags = ["linux", "macos"] }
+".vimrc" = { target = ".vimrc", tags = ["linux"] }
+"powershell_profile.ps1" = { target = "Documents/PowerShell/profile.ps1", tags = ["windows"] }
+".gitconfig" = { target = ".gitconfig", tags = ["linux", "macos", "windows"] }
+
+# Nested paths work too
+"config/nvim/init.vim" = { target = ".config/nvim/init.vim", tags = ["linux"] }
+"AppData/Local/nvim/init.vim" = { target = "AppData/Local/nvim/init.vim", tags = ["windows"] }
+
+[directories]
+# Map of directory names to build tags
+# All files in these directories will be included for the specified tags
+
+"scripts" = { tags = ["linux", "macos"] }
+"bin" = { tags = ["linux"] }
+"windows-scripts" = { tags = ["windows"] }
+
+[default]
+# Default behavior for files/directories not explicitly configured
+include_all = false  # Set to true to include all files by default

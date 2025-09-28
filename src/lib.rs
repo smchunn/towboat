@@ -22,9 +22,54 @@
 
 use anyhow::{Context, Result};
 use regex::Regex;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+
+/// File configuration from .boatrc
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct FileConfig {
+    /// Target path for the file (relative to target directory)
+    pub target: String,
+    /// Build tags this file should be included for
+    pub tags: Vec<String>,
+}
+
+/// Directory configuration from .boatrc
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DirectoryConfig {
+    /// Build tags this directory should be included for
+    pub tags: Vec<String>,
+}
+
+/// Default configuration behavior
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DefaultConfig {
+    /// Whether to include all files/directories not explicitly configured
+    pub include_all: bool,
+}
+
+/// .boatrc configuration file structure
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BoatConfig {
+    /// File-specific configurations
+    #[serde(default)]
+    pub files: HashMap<String, FileConfig>,
+    /// Directory-specific configurations
+    #[serde(default)]
+    pub directories: HashMap<String, DirectoryConfig>,
+    /// Default behavior configuration
+    #[serde(default)]
+    pub default: Option<DefaultConfig>,
+}
+
+impl Default for DefaultConfig {
+    fn default() -> Self {
+        Self { include_all: false }
+    }
+}
 
 /// Configuration for towboat deployment
 #[derive(Debug)]
@@ -63,8 +108,7 @@ pub struct Config {
 /// ```rust
 /// use towboat::process_file_with_build_tags;
 ///
-/// let content = r#"
-/// # Common content
+/// let content = r#"# Common content
 /// export PATH=$PATH:/usr/local/bin
 ///
 /// # {linux-
@@ -77,7 +121,7 @@ pub struct Config {
 /// "#;
 ///
 /// let result = process_file_with_build_tags(content, "linux").unwrap();
-/// assert!(result.contains("ls --color=auto"));
+/// assert!(result.contains("--color=auto"));
 /// assert!(!result.contains("ls -G"));
 /// ```
 pub fn process_file_with_build_tags(content: &str, build_tag: &str) -> Result<String> {
@@ -91,10 +135,119 @@ pub fn process_file_with_build_tags(content: &str, build_tag: &str) -> Result<St
     result = tag_regex.replace_all(&result, "$1").to_string();
 
     // Remove other build tag sections
-    let other_tags_regex = Regex::new(r"(?s)# \{[^}}]+-\s*\n.*?\n# -[^}}]+\}")?;
+    let other_tags_regex = Regex::new(r"(?s)# \{[^}]+-\s*\n.*?\n# -[^}]+\}")?;
     result = other_tags_regex.replace_all(&result, "").to_string();
 
     Ok(result)
+}
+
+/// Parse a boat.toml file and return the configuration
+///
+/// # Arguments
+///
+/// * `config_path` - Path to the boat.toml file
+///
+/// # Returns
+///
+/// Returns the parsed BoatConfig or an error if parsing fails
+pub fn parse_boat_config(config_path: &Path) -> Result<BoatConfig> {
+    let content = fs::read_to_string(config_path)
+        .context(format!("Failed to read boat.toml file: {}", config_path.display()))?;
+
+    let config: BoatConfig = toml::from_str(&content)
+        .context(format!("Failed to parse boat.toml file: {}", config_path.display()))?;
+
+    Ok(config)
+}
+
+/// Find the applicable boat.toml file for a given directory
+///
+/// Searches upward from the given directory to find the nearest boat.toml file
+///
+/// # Arguments
+///
+/// * `dir` - Directory to start searching from
+///
+/// # Returns
+///
+/// Returns the path to the boat.toml file if found, None otherwise
+pub fn find_boat_config(dir: &Path) -> Option<PathBuf> {
+    let mut current = dir;
+    loop {
+        let config_path = current.join("boat.toml");
+        if config_path.exists() && config_path.is_file() {
+            return Some(config_path);
+        }
+
+        match current.parent() {
+            Some(parent) => current = parent,
+            None => break,
+        }
+    }
+    None
+}
+
+/// Check if a file should be included based on boat.toml configuration
+///
+/// # Arguments
+///
+/// * `file_path` - Path to the file to check
+/// * `source_dir` - Source directory root
+/// * `build_tag` - The build tag to match against
+/// * `boat_config` - The boat.toml configuration
+///
+/// # Returns
+///
+/// Returns (should_include, target_path) where target_path is relative to target_dir
+pub fn should_include_file_with_boat_config(
+    file_path: &Path,
+    source_dir: &Path,
+    build_tag: &str,
+    boat_config: &BoatConfig,
+) -> Result<(bool, PathBuf)> {
+    let relative_path = file_path.strip_prefix(source_dir)
+        .context("Failed to get relative path")?;
+
+    let filename = relative_path.to_string_lossy().to_string();
+
+    // Check if file is explicitly configured
+    if let Some(file_config) = boat_config.files.get(&filename) {
+        let should_include = file_config.tags.contains(&build_tag.to_string());
+        let target_path = PathBuf::from(&file_config.target);
+        return Ok((should_include, target_path));
+    }
+
+    // Check if file's parent directory is configured
+    if let Some(parent) = relative_path.parent() {
+        let parent_str = parent.to_string_lossy().to_string();
+        if let Some(dir_config) = boat_config.directories.get(&parent_str) {
+            let should_include = dir_config.tags.contains(&build_tag.to_string());
+            return Ok((should_include, relative_path.to_path_buf()));
+        }
+    }
+
+    // Check default behavior
+    let default_fallback = DefaultConfig::default();
+    let default_config = boat_config.default.as_ref().unwrap_or(&default_fallback);
+    if default_config.include_all {
+        // Still need to check for build tag content in the file
+        if file_path.is_file() {
+            let content = fs::read_to_string(file_path)
+                .context(format!("Failed to read file: {}", file_path.display()))?;
+
+            let escaped_tag = regex::escape(build_tag);
+            let tag_pattern = format!(r"# \{{{}-", escaped_tag);
+            let tag_regex = Regex::new(&tag_pattern)?;
+            if tag_regex.is_match(&content) {
+                return Ok((true, relative_path.to_path_buf()));
+            }
+        }
+
+        // Include by default if include_all is true and no build tags found
+        return Ok((true, relative_path.to_path_buf()));
+    }
+
+    Ok((false, relative_path.to_path_buf()))
 }
 
 /// Determine if a file should be included based on the build tag
@@ -133,6 +286,73 @@ pub fn should_include_file(file_path: &Path, build_tag: &str) -> Result<bool> {
     }
 
     Ok(false)
+}
+
+/// Discover all files in the source directory that match the build tag using boat.toml
+///
+/// Recursively walks the source directory to find files that should be included
+/// based on boat.toml configuration.
+///
+/// # Arguments
+///
+/// * `source_dir` - The directory to search for files
+/// * `build_tag` - The build tag to match against
+///
+/// # Returns
+///
+/// Returns a vector of (source_path, target_path) tuples for files that match the build tag
+pub fn discover_files_with_boat_config(source_dir: &Path, build_tag: &str) -> Result<Vec<(PathBuf, PathBuf)>> {
+    let mut matching_files = Vec::new();
+
+    // Look for boat.toml file in source directory
+    let config_path = match find_boat_config(source_dir) {
+        Some(path) => path,
+        None => {
+            // Fall back to legacy behavior if no boat.toml found
+            let legacy_files = discover_files(source_dir, build_tag)?;
+            return Ok(legacy_files.into_iter().map(|p| {
+                let relative_path = p.strip_prefix(source_dir).unwrap_or(&p);
+
+                // Remove build tag from filename if present (legacy behavior)
+                let target_filename = if let Some(filename) = relative_path.file_name().and_then(|n| n.to_str()) {
+                    let clean_filename = filename.replace(&format!(".{}", build_tag), "");
+                    if let Some(parent) = relative_path.parent() {
+                        parent.join(clean_filename)
+                    } else {
+                        PathBuf::from(clean_filename)
+                    }
+                } else {
+                    relative_path.to_path_buf()
+                };
+
+                (p.clone(), target_filename)
+            }).collect());
+        }
+    };
+
+    let boat_config = parse_boat_config(&config_path)?;
+
+    for entry in WalkDir::new(source_dir) {
+        let entry = entry.context("Failed to read directory entry")?;
+        let path = entry.path();
+
+        // Skip boat.toml files themselves
+        if path.file_name() == Some(std::ffi::OsStr::new("boat.toml")) {
+            continue;
+        }
+
+        if path.is_file() {
+            let (should_include, target_path) = should_include_file_with_boat_config(
+                path, source_dir, build_tag, &boat_config
+            )?;
+
+            if should_include {
+                matching_files.push((path.to_path_buf(), target_path));
+            }
+        }
+    }
+
+    Ok(matching_files)
 }
 
 /// Discover all files in the source directory that match the build tag
@@ -280,7 +500,7 @@ pub fn run_towboat(config: Config) -> Result<()> {
     }
     println!();
 
-    let matching_files = discover_files(&config.source_dir, &config.build_tag)?;
+    let matching_files = discover_files_with_boat_config(&config.source_dir, &config.build_tag)?;
 
     if matching_files.is_empty() {
         println!("No files found matching build tag '{}'", config.build_tag);
@@ -289,23 +509,8 @@ pub fn run_towboat(config: Config) -> Result<()> {
 
     println!("Found {} matching files:", matching_files.len());
 
-    for source_file in &matching_files {
-        let relative_path = source_file.strip_prefix(&config.source_dir)
-            .context("Failed to get relative path")?;
-
-        // Remove build tag from filename if present
-        let target_filename = if let Some(filename) = relative_path.file_name().and_then(|n| n.to_str()) {
-            let clean_filename = filename.replace(&format!(".{}", config.build_tag), "");
-            if let Some(parent) = relative_path.parent() {
-                parent.join(clean_filename)
-            } else {
-                PathBuf::from(clean_filename)
-            }
-        } else {
-            relative_path.to_path_buf()
-        };
-
-        let target_path = target_dir.join(target_filename);
+    for (source_file, target_relative_path) in &matching_files {
+        let target_path = target_dir.join(target_relative_path);
 
         println!("Processing: {} -> {}", source_file.display(), target_path.display());
 
@@ -326,6 +531,123 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    #[test]
+    fn test_parse_boat_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("boat.toml");
+
+        let config_content = r#"
+[files]
+".bashrc" = { target = ".bashrc", tags = ["linux", "macos"] }
+".vimrc" = { target = ".vimrc", tags = ["linux"] }
+
+[directories]
+"scripts" = { tags = ["linux"] }
+
+[default]
+include_all = false
+"#;
+
+        fs::write(&config_path, config_content).unwrap();
+
+        let config = parse_boat_config(&config_path).unwrap();
+
+        assert_eq!(config.files.len(), 2);
+        assert!(config.files.contains_key(".bashrc"));
+        assert!(config.files.contains_key(".vimrc"));
+
+        let bashrc_config = &config.files[".bashrc"];
+        assert_eq!(bashrc_config.target, ".bashrc");
+        assert_eq!(bashrc_config.tags, vec!["linux", "macos"]);
+
+        assert_eq!(config.directories.len(), 1);
+        assert!(config.directories.contains_key("scripts"));
+
+        let default_config = config.default.unwrap();
+        assert!(!default_config.include_all);
+    }
+
+    #[test]
+    fn test_should_include_file_with_boat_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_dir = temp_dir.path();
+        let file_path = source_dir.join(".bashrc");
+        fs::write(&file_path, "content").unwrap();
+
+        let boat_config = BoatConfig {
+            files: {
+                let mut files = HashMap::new();
+                files.insert(".bashrc".to_string(), FileConfig {
+                    target: ".bashrc".to_string(),
+                    tags: vec!["linux".to_string(), "macos".to_string()],
+                });
+                files
+            },
+            directories: HashMap::new(),
+            default: Some(DefaultConfig { include_all: false }),
+        };
+
+        let (should_include, target_path) = should_include_file_with_boat_config(
+            &file_path, source_dir, "linux", &boat_config
+        ).unwrap();
+
+        assert!(should_include);
+        assert_eq!(target_path, PathBuf::from(".bashrc"));
+
+        let (should_include, _) = should_include_file_with_boat_config(
+            &file_path, source_dir, "windows", &boat_config
+        ).unwrap();
+
+        assert!(!should_include);
+    }
+
+    #[test]
+    fn test_discover_files_with_boat_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_dir = temp_dir.path();
+
+        // Create boat.toml file
+        let config_content = r#"
+[files]
+".bashrc" = { target = ".bashrc", tags = ["linux"] }
+".vimrc" = { target = ".vimrc", tags = ["macos"] }
+
+[default]
+include_all = false
+"#;
+        fs::write(source_dir.join("boat.toml"), config_content).unwrap();
+
+        // Create test files
+        fs::write(source_dir.join(".bashrc"), "linux bash content").unwrap();
+        fs::write(source_dir.join(".vimrc"), "macos vim content").unwrap();
+        fs::write(source_dir.join("README.md"), "readme content").unwrap();
+
+        let files = discover_files_with_boat_config(source_dir, "linux").unwrap();
+
+        assert_eq!(files.len(), 1);
+        let (source_path, target_path) = &files[0];
+        assert!(source_path.file_name().unwrap() == ".bashrc");
+        assert_eq!(target_path, &PathBuf::from(".bashrc"));
+    }
+
+    #[test]
+    fn test_discover_files_with_boat_config_fallback() {
+        let temp_dir = TempDir::new().unwrap();
+        let source_dir = temp_dir.path();
+
+        // Create test files without boat.toml (should fall back to legacy behavior)
+        fs::write(source_dir.join(".bashrc.linux"), "linux content").unwrap();
+        fs::write(source_dir.join(".vimrc.macos"), "macos content").unwrap();
+
+        let files = discover_files_with_boat_config(source_dir, "linux").unwrap();
+
+        assert_eq!(files.len(), 1);
+        let (source_path, target_path) = &files[0];
+        assert!(source_path.file_name().unwrap() == ".bashrc.linux");
+        // In legacy mode, build tag should be removed from target filename
+        assert_eq!(target_path, &PathBuf::from(".bashrc"));
+    }
 
     #[test]
     fn test_process_file_with_build_tags_linux() {

@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Towboat is a stow-like CLI tool for managing cross-platform dotfiles with build tags. It allows users to maintain a single set of dotfiles with platform-specific sections using build tags, and selectively deploy them based on the target platform.
 
+The tool supports two configuration methods:
+1. **`boat.toml` files (recommended)**: TOML configuration files that specify which files and directories should be included for each build tag
+2. **Legacy filename-based matching**: Files with build tag extensions (e.g., `.bashrc.linux`) for backward compatibility
+
 ## Common Development Commands
 
 - **Build**: `cargo build`
@@ -29,7 +33,30 @@ towboat -s /path/to/dotfiles -b macos --dry-run
 towboat -s ./dotfiles -b windows -t /target/dir
 ```
 
-## Build Tag Format
+## Configuration Methods
+
+### 1. boat.toml Configuration (Recommended)
+
+Create a `boat.toml` file in your dotfiles directory using TOML format:
+
+```toml
+[files]
+# Map of actual filenames to their target paths and build tags
+".bashrc" = { target = ".bashrc", tags = ["linux", "macos"] }
+".vimrc" = { target = ".vimrc", tags = ["linux"] }
+"windows-profile.ps1" = { target = "profile.ps1", tags = ["windows"] }
+
+[directories]
+# Map of directory names to their build tags
+"scripts" = { tags = ["linux", "macos"] }
+"bin" = { tags = ["linux"] }
+
+[default]
+# Default behavior for files/directories not explicitly configured
+include_all = false  # Set to true to include all files by default
+```
+
+### 2. Build Tag Sections in Files
 
 Files can contain build-specific sections using the syntax:
 ```
@@ -49,6 +76,12 @@ alias ls='ls -G'
 # -macos}
 ```
 
+### 3. Legacy Filename-based Matching
+
+For backward compatibility, files with build tag extensions are still supported:
+- `.bashrc.linux` → deployed as `.bashrc` on Linux
+- `.vimrc.macos` → deployed as `.vimrc` on macOS
+
 ## Project Structure
 
 - `src/main.rs` - CLI entry point and argument parsing
@@ -56,22 +89,24 @@ alias ls='ls -G'
 - `tests/integration_tests.rs` - End-to-end CLI testing
 - `tests/test_fixtures.rs` - Test utilities and complex scenario testing
 - `tests/fixtures/` - Sample dotfiles for testing
-- `Cargo.toml` - Dependencies: clap, anyhow, walkdir, regex + test dependencies
+- `Cargo.toml` - Dependencies: clap, anyhow, walkdir, regex, toml, serde + test dependencies
 
 ## Architecture
 
 - **CLI Interface**: Built with clap for argument parsing
-- **File Discovery**: Uses walkdir to recursively find matching files
-- **Build Tag Processing**: Regex-based parsing of build tag sections
+- **Configuration System**:
+  - Primary: TOML-based `boat.toml` configuration files using serde for parsing
+  - Fallback: Legacy filename-based matching for backward compatibility
+- **File Discovery**: Uses walkdir to recursively find matching files based on configuration
+- **Build Tag Processing**: Regex-based parsing of build tag sections within files
 - **Symlink Management**: Cross-platform symlink creation with file processing for tagged content
-- **File Matching**: Files are included if they contain the build tag in filename (e.g., `.linux`) or have build tag sections in content
 
 ## Testing
 
 The project has comprehensive test coverage:
 
-- **Unit Tests** (`src/lib.rs`): Test individual functions like build tag parsing, file discovery, and symlink creation
-- **Integration Tests** (`tests/integration_tests.rs`): Test complete CLI workflows including dry-run mode, error handling, and file processing
+- **Unit Tests** (`src/lib.rs`): Test individual functions like build tag parsing, file discovery, symlink creation, and boat.toml configuration parsing
+- **Integration Tests** (`tests/integration_tests.rs`): Test complete CLI workflows including dry-run mode, error handling, file processing, and legacy compatibility
 - **Fixture Tests** (`tests/test_fixtures.rs`): Test complex scenarios with realistic dotfile structures using sample fixtures
 
 Test fixtures include:
@@ -80,3 +115,4 @@ Test fixtures include:
 - Neovim configurations for different platforms
 - SSH config with build tags
 - Application config files (TOML format)
+- boat.toml configuration file examples
