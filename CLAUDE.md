@@ -6,9 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Towboat is a stow-like CLI tool for managing cross-platform dotfiles with build tags. It allows users to maintain a single set of dotfiles with platform-specific sections using build tags, and selectively deploy them based on the target platform.
 
-The tool supports two configuration methods:
+The tool supports three configuration methods:
 1. **`boat.toml` files (recommended)**: TOML configuration files that specify which files and directories should be included for each build tag
-2. **Legacy filename-based matching**: Files with build tag extensions (e.g., `.bashrc.linux`) for backward compatibility
+2. **Build tag sections in files**: Platform-specific content within files using `# {tag-...# -tag}` syntax
+3. **Legacy filename-based matching**: Files with build tag extensions (e.g., `.bashrc.linux`) for backward compatibility
 
 ## Common Development Commands
 
@@ -93,13 +94,16 @@ For backward compatibility, files with build tag extensions are still supported:
 
 ## Architecture
 
-- **CLI Interface**: Built with clap for argument parsing
+- **CLI Interface**: Built with clap for argument parsing (`src/main.rs`)
+- **Core Library** (`src/lib.rs`): Contains all business logic with public API
 - **Configuration System**:
-  - Primary: TOML-based `boat.toml` configuration files using serde for parsing
+  - Primary: TOML-based `boat.toml` configuration files using serde for parsing (`BoatConfig` struct)
+  - Secondary: Regex-based parsing of build tag sections within files (`# {tag-...# -tag}`)
   - Fallback: Legacy filename-based matching for backward compatibility
 - **File Discovery**: Uses walkdir to recursively find matching files based on configuration
-- **Build Tag Processing**: Regex-based parsing of build tag sections within files
-- **Symlink Management**: Cross-platform symlink creation with file processing for tagged content
+- **Deployment Strategy**:
+  - Files with build tag content are processed and written directly to target
+  - Files without build tags are symlinked to preserve connection to source
 
 ## Testing
 
