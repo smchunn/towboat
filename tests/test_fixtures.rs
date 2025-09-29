@@ -1,6 +1,7 @@
 use std::fs;
 use tempfile::TempDir;
 use std::path::PathBuf;
+use walkdir::WalkDir;
 
 pub struct TestEnvironment {
     pub temp_dir: TempDir,
@@ -116,13 +117,34 @@ mod integration_fixture_tests {
     #[test]
     fn test_full_deployment_scenario() {
         let env = TestEnvironment::new();
-        env.create_nested_structure();
+        // Create a package directory structure
+        let package_dir = env.source_dir.join("testpackage");
+        fs::create_dir_all(&package_dir).unwrap();
+
+        // Move nested structure creation to the package directory
+        let temp_env = TestEnvironment::new();
+        temp_env.create_nested_structure();
+
+        // Copy files to package directory
+        let walker = WalkDir::new(&temp_env.source_dir);
+        for entry in walker {
+            let entry = entry.unwrap();
+            if entry.file_type().is_file() {
+                let rel_path = entry.path().strip_prefix(&temp_env.source_dir).unwrap();
+                let target_path = package_dir.join(rel_path);
+                if let Some(parent) = target_path.parent() {
+                    fs::create_dir_all(parent).unwrap();
+                }
+                fs::copy(entry.path(), target_path).unwrap();
+            }
+        }
 
         let mut cmd = Command::cargo_bin("towboat").unwrap();
         cmd.args([
-            "-s", env.source_dir.to_str().unwrap(),
+            "-d", env.source_dir.to_str().unwrap(),
             "-t", env.target_dir.to_str().unwrap(),
             "-b", "linux",
+            "testpackage",
         ]);
 
         cmd.assert()
@@ -147,21 +169,45 @@ mod integration_fixture_tests {
         let env = TestEnvironment::new();
         env.create_nested_structure();
 
+        // Create a package directory structure
+        let package_dir = env.source_dir.join("testpackage");
+        fs::create_dir_all(&package_dir).unwrap();
+
+        // Move nested structure creation to the package directory
+        let temp_env = TestEnvironment::new();
+        temp_env.create_nested_structure();
+
+        // Copy files to package directory
+        let walker = WalkDir::new(&temp_env.source_dir);
+        for entry in walker {
+            let entry = entry.unwrap();
+            if entry.file_type().is_file() {
+                let rel_path = entry.path().strip_prefix(&temp_env.source_dir).unwrap();
+                let target_path = package_dir.join(rel_path);
+                if let Some(parent) = target_path.parent() {
+                    fs::create_dir_all(parent).unwrap();
+                }
+                fs::copy(entry.path(), target_path).unwrap();
+            }
+        }
+
         // Deploy for Linux
         let mut cmd = Command::cargo_bin("towboat").unwrap();
         cmd.args([
-            "-s", env.source_dir.to_str().unwrap(),
+            "-d", env.source_dir.to_str().unwrap(),
             "-t", env.target_dir.join("linux").to_str().unwrap(),
             "-b", "linux",
+            "testpackage",
         ]);
         cmd.assert().success();
 
         // Deploy for macOS
         let mut cmd = Command::cargo_bin("towboat").unwrap();
         cmd.args([
-            "-s", env.source_dir.to_str().unwrap(),
+            "-d", env.source_dir.to_str().unwrap(),
             "-t", env.target_dir.join("macos").to_str().unwrap(),
             "-b", "macos",
+            "testpackage",
         ]);
         cmd.assert().success();
 

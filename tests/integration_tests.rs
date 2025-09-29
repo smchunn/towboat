@@ -23,7 +23,7 @@ fn test_cli_missing_required_args() {
 #[test]
 fn test_cli_nonexistent_source_directory() {
     let mut cmd = Command::cargo_bin("towboat").unwrap();
-    cmd.args(["-s", "/nonexistent", "-b", "linux"]);
+    cmd.args(["-d", "/nonexistent", "package"]);
     cmd.assert()
         .failure()
         .stderr(predicate::str::contains("Source directory does not exist"));
@@ -32,15 +32,16 @@ fn test_cli_nonexistent_source_directory() {
 #[test]
 fn test_cli_dry_run_mode() {
     let temp_dir = TempDir::new().unwrap();
-    let source_dir = temp_dir.path().join("source");
+    let stow_dir = temp_dir.path();
+    let package_dir = stow_dir.join("testpackage");
     let target_dir = temp_dir.path().join("target");
 
-    fs::create_dir_all(&source_dir).unwrap();
+    fs::create_dir_all(&package_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
     // Create a test file with build tags
     fs::write(
-        source_dir.join(".bashrc"),
+        package_dir.join(".bashrc"),
         r#"# Common content
 export PATH=$PATH:/usr/local/bin
 
@@ -56,13 +57,14 @@ alias ls='ls -G'
 
     let mut cmd = Command::cargo_bin("towboat").unwrap();
     cmd.args([
-        "-s",
-        source_dir.to_str().unwrap(),
+        "-d",
+        stow_dir.to_str().unwrap(),
         "-t",
         target_dir.to_str().unwrap(),
         "-b",
         "linux",
         "--dry-run",
+        "testpackage",
     ]);
 
     cmd.assert()
@@ -78,15 +80,16 @@ alias ls='ls -G'
 #[test]
 fn test_cli_successful_run_with_build_tags() {
     let temp_dir = TempDir::new().unwrap();
-    let source_dir = temp_dir.path().join("source");
+    let stow_dir = temp_dir.path();
+    let package_dir = stow_dir.join("testpackage");
     let target_dir = temp_dir.path().join("target");
 
-    fs::create_dir_all(&source_dir).unwrap();
+    fs::create_dir_all(&package_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
     // Create a test file with build tags
     fs::write(
-        source_dir.join(".bashrc"),
+        package_dir.join(".bashrc"),
         r#"# Common content
 export PATH=$PATH:/usr/local/bin
 
@@ -107,12 +110,13 @@ echo "Hello from shell""#,
 
     let mut cmd = Command::cargo_bin("towboat").unwrap();
     cmd.args([
-        "-s",
-        source_dir.to_str().unwrap(),
+        "-d",
+        stow_dir.to_str().unwrap(),
         "-t",
         target_dir.to_str().unwrap(),
         "-b",
         "linux",
+        "testpackage",
     ]);
 
     cmd.assert()
@@ -134,25 +138,27 @@ echo "Hello from shell""#,
 #[test]
 fn test_cli_filename_based_matching() {
     let temp_dir = TempDir::new().unwrap();
-    let source_dir = temp_dir.path().join("source");
+    let stow_dir = temp_dir.path();
+    let package_dir = stow_dir.join("testpackage");
     let target_dir = temp_dir.path().join("target");
 
-    fs::create_dir_all(&source_dir).unwrap();
+    fs::create_dir_all(&package_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
     // Create files with build tags in filenames
-    fs::write(source_dir.join(".vimrc.linux"), "set number\nset autoindent").unwrap();
-    fs::write(source_dir.join(".vimrc.macos"), "set bg=dark\nset mouse=a").unwrap();
-    fs::write(source_dir.join(".gitconfig"), "common git config").unwrap();
+    fs::write(package_dir.join(".vimrc.linux"), "set number\nset autoindent").unwrap();
+    fs::write(package_dir.join(".vimrc.macos"), "set bg=dark\nset mouse=a").unwrap();
+    fs::write(package_dir.join(".gitconfig"), "common git config").unwrap();
 
     let mut cmd = Command::cargo_bin("towboat").unwrap();
     cmd.args([
-        "-s",
-        source_dir.to_str().unwrap(),
+        "-d",
+        stow_dir.to_str().unwrap(),
         "-t",
         target_dir.to_str().unwrap(),
         "-b",
         "linux",
+        "testpackage",
     ]);
 
     cmd.assert()
@@ -173,14 +179,15 @@ fn test_cli_filename_based_matching() {
 #[test]
 fn test_cli_nested_directory_structure() {
     let temp_dir = TempDir::new().unwrap();
-    let source_dir = temp_dir.path().join("source");
+    let stow_dir = temp_dir.path();
+    let package_dir = stow_dir.join("testpackage");
     let target_dir = temp_dir.path().join("target");
 
-    fs::create_dir_all(&source_dir).unwrap();
+    fs::create_dir_all(&package_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
     // Create nested directory structure
-    let config_dir = source_dir.join(".config").join("app");
+    let config_dir = package_dir.join(".config").join("app");
     fs::create_dir_all(&config_dir).unwrap();
 
     fs::write(
@@ -191,12 +198,13 @@ fn test_cli_nested_directory_structure() {
 
     let mut cmd = Command::cargo_bin("towboat").unwrap();
     cmd.args([
-        "-s",
-        source_dir.to_str().unwrap(),
+        "-d",
+        stow_dir.to_str().unwrap(),
         "-t",
         target_dir.to_str().unwrap(),
         "-b",
         "linux",
+        "testpackage",
     ]);
 
     cmd.assert().success();
@@ -213,24 +221,26 @@ fn test_cli_nested_directory_structure() {
 #[test]
 fn test_cli_no_matching_files() {
     let temp_dir = TempDir::new().unwrap();
-    let source_dir = temp_dir.path().join("source");
+    let stow_dir = temp_dir.path();
+    let package_dir = stow_dir.join("testpackage");
     let target_dir = temp_dir.path().join("target");
 
-    fs::create_dir_all(&source_dir).unwrap();
+    fs::create_dir_all(&package_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
     // Create files that don't match the build tag
-    fs::write(source_dir.join(".vimrc.macos"), "macos content").unwrap();
-    fs::write(source_dir.join("README.md"), "documentation").unwrap();
+    fs::write(package_dir.join(".vimrc.macos"), "macos content").unwrap();
+    fs::write(package_dir.join("README.md"), "documentation").unwrap();
 
     let mut cmd = Command::cargo_bin("towboat").unwrap();
     cmd.args([
-        "-s",
-        source_dir.to_str().unwrap(),
+        "-d",
+        stow_dir.to_str().unwrap(),
         "-t",
         target_dir.to_str().unwrap(),
         "-b",
         "linux",
+        "testpackage",
     ]);
 
     cmd.assert()
@@ -241,17 +251,18 @@ fn test_cli_no_matching_files() {
 #[test]
 fn test_cli_mixed_file_types() {
     let temp_dir = TempDir::new().unwrap();
-    let source_dir = temp_dir.path().join("source");
+    let stow_dir = temp_dir.path();
+    let package_dir = stow_dir.join("testpackage");
     let target_dir = temp_dir.path().join("target");
 
-    fs::create_dir_all(&source_dir).unwrap();
+    fs::create_dir_all(&package_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
     // Mix of filename-based and content-based matching
-    fs::write(source_dir.join(".bashrc.linux"), "bash linux config").unwrap();
+    fs::write(package_dir.join(".bashrc.linux"), "bash linux config").unwrap();
 
     fs::write(
-        source_dir.join(".profile"),
+        package_dir.join(".profile"),
         r#"# Common profile
 export USER_HOME=$HOME
 
@@ -267,12 +278,13 @@ export HOMEBREW_PREFIX=/usr/local
 
     let mut cmd = Command::cargo_bin("towboat").unwrap();
     cmd.args([
-        "-s",
-        source_dir.to_str().unwrap(),
+        "-d",
+        stow_dir.to_str().unwrap(),
         "-t",
         target_dir.to_str().unwrap(),
         "-b",
         "linux",
+        "testpackage",
     ]);
 
     cmd.assert()

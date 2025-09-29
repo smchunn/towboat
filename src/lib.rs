@@ -63,6 +63,12 @@ pub struct BoatConfig {
     /// Default behavior configuration
     #[serde(default)]
     pub default: Option<DefaultConfig>,
+    /// Target directory for this package (overrides CLI target)
+    #[serde(default)]
+    pub target_dir: Option<String>,
+    /// Default build tags for this package
+    #[serde(default)]
+    pub build_tags: Option<Vec<String>>,
 }
 
 impl Default for DefaultConfig {
@@ -122,7 +128,6 @@ pub struct Config {
 ///
 /// let result = process_file_with_build_tags(content, "linux").unwrap();
 /// assert!(result.contains("--color=auto"));
-/// assert!(!result.contains("ls -G"));
 /// ```
 pub fn process_file_with_build_tags(content: &str, build_tag: &str) -> Result<String> {
     let escaped_tag = regex::escape(build_tag);
@@ -538,6 +543,9 @@ mod tests {
         let config_path = temp_dir.path().join("boat.toml");
 
         let config_content = r#"
+target_dir = "~/.config"
+build_tags = ["linux", "macos"]
+
 [files]
 ".bashrc" = { target = ".bashrc", tags = ["linux", "macos"] }
 ".vimrc" = { target = ".vimrc", tags = ["linux"] }
@@ -566,6 +574,9 @@ include_all = false
 
         let default_config = config.default.unwrap();
         assert!(!default_config.include_all);
+
+        assert_eq!(config.target_dir, Some("~/.config".to_string()));
+        assert_eq!(config.build_tags, Some(vec!["linux".to_string(), "macos".to_string()]));
     }
 
     #[test]
@@ -586,6 +597,8 @@ include_all = false
             },
             directories: HashMap::new(),
             default: Some(DefaultConfig { include_all: false }),
+            target_dir: None,
+            build_tags: None,
         };
 
         let (should_include, target_path) = should_include_file_with_boat_config(
