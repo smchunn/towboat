@@ -9,7 +9,8 @@ A modern, cross-platform alternative to GNU Stow for managing dotfiles with buil
 
 - 🔧 **Cross-platform**: Works on Linux, macOS, and Windows
 - 🏷️ **Build Tags**: Include/exclude content based on platform or environment
-- 📁 **Flexible Structure**: Support for both filename-based and content-based tagging
+- 📁 **Flexible Structure**: Support for TOML configuration, filename-based, and content-based tagging
+- ⚙️ **boat.toml Configuration**: Explicit control over which files are deployed per build tag
 - 🔗 **Smart Linking**: Creates symlinks for unchanged files, processes tagged content
 - 🔍 **Dry Run Mode**: Preview changes before applying them
 - 🧪 **Well Tested**: Comprehensive unit and integration tests
@@ -33,34 +34,103 @@ cargo install --path .
 
 ## Quick Start
 
-1. **Organize your dotfiles** with build tags:
+1. **Organize your dotfiles** in a stow-like package structure:
 
 ```bash
 dotfiles/
-├── .bashrc.linux           # Linux-specific bash config
-├── .bashrc.macos           # macOS-specific bash config
-├── .gitconfig              # Shared git config with tags
-└── .config/
-    └── nvim/
-        ├── init.vim.linux  # Linux-specific nvim config
-        └── init.vim.macos  # macOS-specific nvim config
+├── bash/                   # Package: bash configuration
+│   ├── boat.toml          # Configuration for this package
+│   ├── .bashrc            # Bash configuration
+│   └── .bash_profile      # Additional bash file
+├── vim/                   # Package: vim configuration
+│   ├── boat.toml          # Configuration for this package
+│   └── .vimrc             # Vim configuration
+└── git/                   # Package: git configuration
+    ├── boat.toml          # Configuration for this package
+    └── .gitconfig         # Git configuration
 ```
 
-2. **Deploy for your platform**:
+2. **Deploy packages for your platform**:
 
 ```bash
-# Deploy Linux dotfiles
-towboat -s ~/dotfiles -b linux -t ~
+# Deploy bash package (auto-detects platform)
+towboat bash
+
+# Deploy from specific directory
+towboat -d ~/dotfiles bash
+
+# Deploy with specific build tag
+towboat -d ~/dotfiles -b linux vim
 
 # Preview changes first
-towboat -s ~/dotfiles -b linux --dry-run
+towboat -d ~/dotfiles --dry-run git
 ```
 
-## Build Tag Syntax
+## Configuration Methods
 
-Towboat supports two ways to specify platform-specific content:
+Towboat supports three ways to specify platform-specific content, with `boat.toml` being the recommended approach:
 
-### 1. Filename-based Tags
+### 1. boat.toml Configuration (Recommended)
+
+Create a `boat.toml` file in each package directory to explicitly control which files and directories are deployed for each build tag. This provides the most control and clarity.
+
+**Example boat.toml:**
+
+```toml
+# Package-level configuration
+target_dir = "~"                    # Override target directory (supports ~ expansion)
+build_tags = ["linux", "macos"]     # Default build tags for auto-detection
+
+[files]
+# Map actual filenames to target paths and build tags
+".bashrc" = { target = ".bashrc", tags = ["linux", "macos"] }
+".bash_profile" = { target = ".bash_profile", tags = ["macos"] }
+"windows-profile.ps1" = { target = "profile.ps1", tags = ["windows"] }
+
+[directories]
+# Specify which directories to include per build tag
+"scripts" = { tags = ["linux", "macos"] }
+"bin" = { tags = ["linux"] }
+
+[default]
+# Default behavior for files not explicitly configured
+include_all = false  # Set to true to include all unconfigured files
+```
+
+**Configuration Options:**
+
+- **Package-level settings:**
+  - `target_dir`: Override the target directory for this package (supports `~` and `~/path` expansion)
+  - `build_tags`: Default build tags used when `-b` flag is not specified (falls back to platform auto-detection)
+
+- **Files section:**
+  - Map source filenames to their deployment configuration
+  - `target`: The filename to create in the target directory
+  - `tags`: Array of build tags that should include this file
+
+- **Directories section:**
+  - Specify which directories should be included per build tag
+  - `tags`: Array of build tags that should include this directory
+
+- **Default section:**
+  - `include_all`: If `true`, files/directories not explicitly configured are included for all build tags
+
+**Example boat.toml for a bash package:**
+
+```toml
+target_dir = "~"
+build_tags = ["linux"]
+
+[files]
+".bashrc" = { target = ".bashrc", tags = ["linux", "macos"] }
+".bash_profile" = { target = ".bash_profile", tags = ["macos"] }
+".bash_aliases" = { target = ".bash_aliases", tags = ["linux", "macos", "windows"] }
+
+[directories]
+"scripts" = { tags = ["linux", "macos"] }
+```
+
+### 2. Filename-based Tags (Legacy)
 
 Add the build tag as a suffix to your filename:
 
@@ -70,7 +140,7 @@ Add the build tag as a suffix to your filename:
 config.toml.dev  → config.toml (with 'dev' tag)
 ```
 
-### 2. Content-based Tags
+### 3. Content-based Tags
 
 Include platform-specific sections within files:
 
@@ -113,12 +183,16 @@ echo "Configuration loaded"
 ## Usage
 
 ```
-towboat [OPTIONS] --source <DIR> --build <TAG>
+towboat [OPTIONS] <PACKAGE>
+
+Arguments:
+  <PACKAGE>           Package directory name to symlink (e.g., 'bash', 'vim', 'git')
 
 Options:
-  -s, --source <DIR>  Source directory containing dotfiles
-  -t, --target <DIR>  Target directory to create symlinks in [default: .]
+  -d, --dir <DIR>     Stow directory containing packages [default: .]
+  -t, --target <DIR>  Target directory to create symlinks in [default: ~]
   -b, --build <TAG>   Build tag to match (e.g., 'linux', 'macos', 'windows')
+                      Auto-detected from platform if not specified
       --dry-run       Show what would be done without making changes
   -h, --help          Print help
   -V, --version       Print version
@@ -127,17 +201,23 @@ Options:
 ### Examples
 
 ```bash
-# Deploy Linux dotfiles to home directory
-towboat -s ~/dotfiles -b linux -t ~
+# Deploy bash package (auto-detects platform)
+towboat bash
 
-# Deploy development configuration to current directory
-towboat -s ./config -b dev
+# Deploy from specific stow directory
+towboat -d ~/dotfiles bash
 
-# Preview Windows deployment
-towboat -s ~/dotfiles -b windows --dry-run
+# Deploy with explicit build tag
+towboat -d ~/dotfiles -b linux vim
 
-# Deploy to specific target directory
-towboat -s ~/dotfiles -b macos -t /tmp/test-deploy
+# Preview deployment without making changes
+towboat -d ~/dotfiles --dry-run git
+
+# Deploy to custom target directory
+towboat -d ~/dotfiles -t /tmp/test bash
+
+# Full example with all options
+towboat -d ~/dotfiles -t ~ -b macos --dry-run vim
 ```
 
 ## Real-world Examples
@@ -231,15 +311,21 @@ Host production
 
 ## How It Works
 
-1. **File Discovery**: Towboat recursively scans your source directory for files matching the specified build tag
-2. **Tag Processing**: Files are included if they:
-   - Have the build tag in their filename (e.g., `.bashrc.linux`)
-   - Contain build tag sections in their content (e.g., `# {linux-...# -linux}`)
-3. **Content Processing**: For files with build tags in content:
+1. **Package Selection**: Towboat uses a stow-like interface where you specify a package name (e.g., `bash`, `vim`)
+2. **Configuration Loading**: If a `boat.toml` exists in the package directory, it's used to determine which files to deploy
+3. **Build Tag Resolution**: Build tag is determined from:
+   - CLI argument (`-b` flag) - highest priority
+   - `boat.toml` configuration (`build_tags` array) - medium priority
+   - Platform auto-detection (Linux/macOS/Windows) - fallback
+4. **File Discovery**: Files are included based on:
+   - **boat.toml** configuration (explicit file/directory mappings)
+   - **Filename-based tags** (e.g., `.bashrc.linux`)
+   - **Content-based tags** (e.g., `# {linux-...# -linux}`)
+5. **Content Processing**: For files with build tag sections:
    - Matching tag sections are extracted and included
    - Non-matching tag sections are removed
    - Common content outside tags is preserved
-4. **Deployment**:
+6. **Deployment**:
    - Files with processed content are written directly to the target
    - Files without build tags are symlinked to preserve the connection to source
 
@@ -264,8 +350,8 @@ cargo test test_fixtures     # Run fixture tests only
 
 ```
 src/
-├── main.rs          # CLI entry point
-└── lib.rs           # Core library functions
+├── main.rs          # CLI entry point with stow-like interface
+└── lib.rs           # Core library functions and boat.toml parsing
 
 tests/
 ├── integration_tests.rs  # End-to-end CLI testing
@@ -274,6 +360,7 @@ tests/
     ├── bashrc_linux.txt
     ├── bashrc_macos.txt
     ├── gitconfig_with_tags.txt
+    ├── boat_config.toml
     └── ...
 ```
 
@@ -282,8 +369,10 @@ tests/
 | Feature | GNU Stow | Towboat |
 |---------|----------|---------|
 | Cross-platform | Unix-like only | Linux, macOS, Windows |
+| Package-based deployment | Yes | Yes |
 | Platform-specific content | No | Yes (build tags) |
 | File processing | Symlinks only | Symlinks + content processing |
+| Configuration files | No | Yes (boat.toml) |
 | Modern CLI | Basic | Clap-based with help/validation |
 | Dry run mode | Yes | Yes |
 | Nested structures | Yes | Yes |
