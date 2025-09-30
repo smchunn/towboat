@@ -1,15 +1,21 @@
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
+use std::path::Path;
 use tempfile::TempDir;
+
+/// Helper function to create a boat.toml file with the given target configuration
+fn create_boat_config(package_dir: &Path, config: &str) {
+    fs::write(package_dir.join("boat.toml"), config).unwrap();
+}
 
 #[test]
 fn test_cli_help() {
     let mut cmd = Command::cargo_bin("towboat").unwrap();
     cmd.arg("--help");
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("A stow-like tool for cross-platform dotfiles"));
+    cmd.assert().success().stdout(predicate::str::contains(
+        "A stow-like tool for cross-platform dotfiles",
+    ));
 }
 
 #[test]
@@ -38,6 +44,15 @@ fn test_cli_dry_run_mode() {
 
     fs::create_dir_all(&package_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
+
+    // Create boat.toml
+    create_boat_config(
+        &package_dir,
+        r#"
+[targets]
+".bashrc" = { tags = ["linux", "macos"] }
+"#,
+    );
 
     // Create a test file with build tags
     fs::write(
@@ -86,6 +101,15 @@ fn test_cli_successful_run_with_build_tags() {
 
     fs::create_dir_all(&package_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
+
+    // Create boat.toml
+    create_boat_config(
+        &package_dir,
+        r#"
+[targets]
+".bashrc" = { tags = ["linux", "macos"] }
+"#,
+    );
 
     // Create a test file with build tags
     fs::write(
@@ -145,8 +169,22 @@ fn test_cli_filename_based_matching() {
     fs::create_dir_all(&package_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
+    // Create boat.toml with target remapping
+    create_boat_config(
+        &package_dir,
+        r#"
+[targets]
+".vimrc.linux" = { target = ".vimrc", tags = ["linux"] }
+".vimrc.macos" = { target = ".vimrc", tags = ["macos"] }
+"#,
+    );
+
     // Create files with build tags in filenames
-    fs::write(package_dir.join(".vimrc.linux"), "set number\nset autoindent").unwrap();
+    fs::write(
+        package_dir.join(".vimrc.linux"),
+        "set number\nset autoindent",
+    )
+    .unwrap();
     fs::write(package_dir.join(".vimrc.macos"), "set bg=dark\nset mouse=a").unwrap();
     fs::write(package_dir.join(".gitconfig"), "common git config").unwrap();
 
@@ -185,6 +223,15 @@ fn test_cli_nested_directory_structure() {
 
     fs::create_dir_all(&package_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
+
+    // Create boat.toml
+    create_boat_config(
+        &package_dir,
+        r#"
+[targets]
+".config/app/config.toml.linux" = { target = ".config/app/config.toml", tags = ["linux"] }
+"#,
+    );
 
     // Create nested directory structure
     let config_dir = package_dir.join(".config").join("app");
@@ -228,6 +275,15 @@ fn test_cli_no_matching_files() {
     fs::create_dir_all(&package_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
 
+    // Create boat.toml with only macos targets
+    create_boat_config(
+        &package_dir,
+        r#"
+[targets]
+".vimrc.macos" = { tags = ["macos"] }
+"#,
+    );
+
     // Create files that don't match the build tag
     fs::write(package_dir.join(".vimrc.macos"), "macos content").unwrap();
     fs::write(package_dir.join("README.md"), "documentation").unwrap();
@@ -243,9 +299,9 @@ fn test_cli_no_matching_files() {
         "testpackage",
     ]);
 
-    cmd.assert()
-        .success()
-        .stdout(predicate::str::contains("No files found matching build tag 'linux'"));
+    cmd.assert().success().stdout(predicate::str::contains(
+        "No files found matching build tag 'linux'",
+    ));
 }
 
 #[test]
@@ -257,6 +313,16 @@ fn test_cli_mixed_file_types() {
 
     fs::create_dir_all(&package_dir).unwrap();
     fs::create_dir_all(&target_dir).unwrap();
+
+    // Create boat.toml
+    create_boat_config(
+        &package_dir,
+        r#"
+[targets]
+".bashrc.linux" = { target = ".bashrc", tags = ["linux"] }
+".profile" = { tags = ["linux", "macos"] }
+"#,
+    );
 
     // Mix of filename-based and content-based matching
     fs::write(package_dir.join(".bashrc.linux"), "bash linux config").unwrap();

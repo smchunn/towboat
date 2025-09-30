@@ -1,6 +1,6 @@
 use std::fs;
-use tempfile::TempDir;
 use std::path::PathBuf;
+use tempfile::TempDir;
 use walkdir::WalkDir;
 
 pub struct TestEnvironment {
@@ -42,15 +42,30 @@ impl TestEnvironment {
         // Root level files
         files.push(self.create_file(".bashrc.linux", include_str!("fixtures/bashrc_linux.txt")));
         files.push(self.create_file(".bashrc.macos", include_str!("fixtures/bashrc_macos.txt")));
-        files.push(self.create_file(".gitconfig", include_str!("fixtures/gitconfig_with_tags.txt")));
+        files.push(self.create_file(
+            ".gitconfig",
+            include_str!("fixtures/gitconfig_with_tags.txt"),
+        ));
 
         // Nested config files
-        files.push(self.create_file(".config/nvim/init.vim.linux", include_str!("fixtures/nvim_linux.vim")));
-        files.push(self.create_file(".config/nvim/init.vim.macos", include_str!("fixtures/nvim_macos.vim")));
-        files.push(self.create_file(".config/app/config.toml", include_str!("fixtures/config_with_tags.toml")));
+        files.push(self.create_file(
+            ".config/nvim/init.vim.linux",
+            include_str!("fixtures/nvim_linux.vim"),
+        ));
+        files.push(self.create_file(
+            ".config/nvim/init.vim.macos",
+            include_str!("fixtures/nvim_macos.vim"),
+        ));
+        files.push(self.create_file(
+            ".config/app/config.toml",
+            include_str!("fixtures/config_with_tags.toml"),
+        ));
 
         // SSH config with tags
-        files.push(self.create_file(".ssh/config", include_str!("fixtures/ssh_config_with_tags.txt")));
+        files.push(self.create_file(
+            ".ssh/config",
+            include_str!("fixtures/ssh_config_with_tags.txt"),
+        ));
 
         files
     }
@@ -59,7 +74,7 @@ impl TestEnvironment {
 #[cfg(test)]
 mod fixture_tests {
     use super::*;
-    use towboat::discover_files;
+    use towboat::discover_files_with_boat_config;
 
     #[test]
     fn test_fixture_environment_creation() {
@@ -84,21 +99,36 @@ mod fixture_tests {
         let env = TestEnvironment::new();
         env.create_nested_structure();
 
-        let linux_files = discover_files(&env.source_dir, "linux").unwrap();
-        let macos_files = discover_files(&env.source_dir, "macos").unwrap();
+        // Create a boat.toml file for testing
+        let boat_config = r#"
+[targets]
+".bashrc.linux" = { tags = ["linux"] }
+".bashrc.macos" = { tags = ["macos"] }
+".gitconfig" = { tags = ["linux", "macos"] }
+".config/nvim/init.vim.linux" = { tags = ["linux"] }
+".config/nvim/init.vim.macos" = { tags = ["macos"] }
+".ssh/config" = { tags = ["linux", "macos"] }
+".config/app/config.toml" = { tags = ["linux", "macos"] }
+"#;
+        fs::write(env.source_dir.join("boat.toml"), boat_config).unwrap();
+
+        let linux_files = discover_files_with_boat_config(&env.source_dir, "linux").unwrap();
+        let macos_files = discover_files_with_boat_config(&env.source_dir, "macos").unwrap();
 
         // Should find multiple files for each platform
         assert!(linux_files.len() >= 3);
         assert!(macos_files.len() >= 3);
 
         // Verify different platforms find different files
-        let linux_names: Vec<_> = linux_files.iter()
-            .filter_map(|p| p.file_name())
+        let linux_names: Vec<_> = linux_files
+            .iter()
+            .filter_map(|(p, _)| p.file_name())
             .map(|n| n.to_string_lossy().to_string())
             .collect();
 
-        let macos_names: Vec<_> = macos_files.iter()
-            .filter_map(|p| p.file_name())
+        let macos_names: Vec<_> = macos_files
+            .iter()
+            .filter_map(|(p, _)| p.file_name())
             .map(|n| n.to_string_lossy().to_string())
             .collect();
 
@@ -139,11 +169,27 @@ mod integration_fixture_tests {
             }
         }
 
+        // Create boat.toml for the package
+        let boat_config = r#"
+[targets]
+".bashrc.linux" = { target = ".bashrc", tags = ["linux"] }
+".bashrc.macos" = { target = ".bashrc", tags = ["macos"] }
+".gitconfig" = { tags = ["linux", "macos"] }
+".config/nvim/init.vim.linux" = { target = ".config/nvim/init.vim", tags = ["linux"] }
+".config/nvim/init.vim.macos" = { target = ".config/nvim/init.vim", tags = ["macos"] }
+".ssh/config" = { tags = ["linux", "macos"] }
+".config/app/config.toml" = { tags = ["linux", "macos"] }
+"#;
+        fs::write(package_dir.join("boat.toml"), boat_config).unwrap();
+
         let mut cmd = Command::cargo_bin("towboat").unwrap();
         cmd.args([
-            "-d", env.source_dir.to_str().unwrap(),
-            "-t", env.target_dir.to_str().unwrap(),
-            "-b", "linux",
+            "-d",
+            env.source_dir.to_str().unwrap(),
+            "-t",
+            env.target_dir.to_str().unwrap(),
+            "-b",
+            "linux",
             "testpackage",
         ]);
 
@@ -191,12 +237,28 @@ mod integration_fixture_tests {
             }
         }
 
+        // Create boat.toml for the package
+        let boat_config = r#"
+[targets]
+".bashrc.linux" = { target = ".bashrc", tags = ["linux"] }
+".bashrc.macos" = { target = ".bashrc", tags = ["macos"] }
+".gitconfig" = { tags = ["linux", "macos"] }
+".config/nvim/init.vim.linux" = { target = ".config/nvim/init.vim", tags = ["linux"] }
+".config/nvim/init.vim.macos" = { target = ".config/nvim/init.vim", tags = ["macos"] }
+".ssh/config" = { tags = ["linux", "macos"] }
+".config/app/config.toml" = { tags = ["linux", "macos"] }
+"#;
+        fs::write(package_dir.join("boat.toml"), boat_config).unwrap();
+
         // Deploy for Linux
         let mut cmd = Command::cargo_bin("towboat").unwrap();
         cmd.args([
-            "-d", env.source_dir.to_str().unwrap(),
-            "-t", env.target_dir.join("linux").to_str().unwrap(),
-            "-b", "linux",
+            "-d",
+            env.source_dir.to_str().unwrap(),
+            "-t",
+            env.target_dir.join("linux").to_str().unwrap(),
+            "-b",
+            "linux",
             "testpackage",
         ]);
         cmd.assert().success();
@@ -204,9 +266,12 @@ mod integration_fixture_tests {
         // Deploy for macOS
         let mut cmd = Command::cargo_bin("towboat").unwrap();
         cmd.args([
-            "-d", env.source_dir.to_str().unwrap(),
-            "-t", env.target_dir.join("macos").to_str().unwrap(),
-            "-b", "macos",
+            "-d",
+            env.source_dir.to_str().unwrap(),
+            "-t",
+            env.target_dir.join("macos").to_str().unwrap(),
+            "-b",
+            "macos",
             "testpackage",
         ]);
         cmd.assert().success();

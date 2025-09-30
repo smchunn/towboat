@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::{Arg, Command};
 use std::path::PathBuf;
-use towboat::{Config, run_towboat, find_boat_config, parse_boat_config};
+use towboat::{Config, find_boat_config, parse_boat_config, run_towboat};
 
 fn main() -> Result<()> {
     let matches = Command::new("towboat")
@@ -34,13 +34,33 @@ fn main() -> Result<()> {
                 .short('b')
                 .long("build")
                 .value_name("TAG")
-                .help("Build tag to match (e.g., 'linux', 'macos', 'windows')")
+                .help("Build tag to match (defaults to 'default' if not specified)")
                 .required(false),
         )
         .arg(
             Arg::new("dry-run")
                 .long("dry-run")
                 .help("Show what would be done without making changes")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("force")
+                .short('f')
+                .long("force")
+                .help("Overwrite existing files in target directory")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("adopt")
+                .long("adopt")
+                .help("Adopt existing files from target directory back to package")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("remove")
+                .short('r')
+                .long("remove")
+                .help("Remove symlinks/files for this package from target directory")
                 .action(clap::ArgAction::SetTrue),
         )
         .get_matches();
@@ -71,10 +91,10 @@ fn main() -> Result<()> {
                             Ok(home) => PathBuf::from(home),
                             Err(_) => target_dir.clone(),
                         }
-                    } else if config_target.starts_with("~/") {
+                    } else if let Some(stripped) = config_target.strip_prefix("~/") {
                         match std::env::var("HOME") {
-                            Ok(home) => PathBuf::from(home).join(&config_target[2..]),
-                            Err(_) => PathBuf::from(&config_target[2..]),
+                            Ok(home) => PathBuf::from(home).join(stripped),
+                            Err(_) => PathBuf::from(stripped),
                         }
                     } else {
                         PathBuf::from(config_target)
@@ -83,70 +103,37 @@ fn main() -> Result<()> {
                     target_dir.clone()
                 };
 
-                let config_build_tag = if let Some(cli_build_tag) = matches.get_one::<String>("build") {
-                    cli_build_tag.clone()
-                } else if let Some(default_tags) = boat_config.build_tags {
-                    // Use first default build tag from config
-                    default_tags.into_iter().next().unwrap_or_else(|| {
-                        // Fallback to platform detection
-                        if cfg!(target_os = "linux") {
-                            "linux".to_string()
-                        } else if cfg!(target_os = "macos") {
-                            "macos".to_string()
-                        } else if cfg!(target_os = "windows") {
-                            "windows".to_string()
-                        } else {
-                            "default".to_string()
-                        }
-                    })
-                } else {
-                    // Fallback to platform detection
-                    if cfg!(target_os = "linux") {
-                        "linux".to_string()
-                    } else if cfg!(target_os = "macos") {
-                        "macos".to_string()
-                    } else if cfg!(target_os = "windows") {
-                        "windows".to_string()
+                let config_build_tag =
+                    if let Some(cli_build_tag) = matches.get_one::<String>("build") {
+                        cli_build_tag.to_string()
+                    } else if let Some(default_tags) = boat_config.build_tags {
+                        // Use first default build tag from config
+                        default_tags
+                            .into_iter()
+                            .next()
+                            .unwrap_or_else(|| "default".to_string())
                     } else {
+                        // Default to "default" tag
                         "default".to_string()
-                    }
-                };
+                    };
 
                 (config_target_dir, config_build_tag)
             }
             Err(_) => {
                 // If boat.toml exists but can't be parsed, use CLI defaults
-                let build_tag = matches.get_one::<String>("build")
-                    .map(|s| s.clone())
-                    .unwrap_or_else(|| {
-                        if cfg!(target_os = "linux") {
-                            "linux".to_string()
-                        } else if cfg!(target_os = "macos") {
-                            "macos".to_string()
-                        } else if cfg!(target_os = "windows") {
-                            "windows".to_string()
-                        } else {
-                            "default".to_string()
-                        }
-                    });
+                let build_tag = matches
+                    .get_one::<String>("build")
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| "default".to_string());
                 (target_dir, build_tag)
             }
         }
     } else {
-        // No boat.toml found, use CLI arguments and platform defaults
-        let build_tag = matches.get_one::<String>("build")
-            .map(|s| s.clone())
-            .unwrap_or_else(|| {
-                if cfg!(target_os = "linux") {
-                    "linux".to_string()
-                } else if cfg!(target_os = "macos") {
-                    "macos".to_string()
-                } else if cfg!(target_os = "windows") {
-                    "windows".to_string()
-                } else {
-                    "default".to_string()
-                }
-            });
+        // No boat.toml found, use CLI arguments with "default" fallback
+        let build_tag = matches
+            .get_one::<String>("build")
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "default".to_string());
         (target_dir, build_tag)
     };
 
@@ -155,6 +142,9 @@ fn main() -> Result<()> {
         target_dir: final_target_dir,
         build_tag,
         dry_run: matches.get_flag("dry-run"),
+        force: matches.get_flag("force"),
+        adopt: matches.get_flag("adopt"),
+        remove: matches.get_flag("remove"),
     };
 
     run_towboat(config)
