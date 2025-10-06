@@ -139,6 +139,7 @@ fn main() -> Result<()> {
 
     let config = Config {
         source_dir,
+        stow_dir,
         target_dir: final_target_dir,
         build_tag,
         dry_run: matches.get_flag("dry-run"),

@@ -10,7 +10,8 @@
 //! use std::path::PathBuf;
 //!
 //! let config = Config {
-//!     source_dir: PathBuf::from("./dotfiles"),
+//!     source_dir: PathBuf::from("./dotfiles/home"),
+//!     stow_dir: PathBuf::from("./dotfiles"),
 //!     target_dir: PathBuf::from("/home/user"),
 //!     build_tag: "linux".to_string(),
 //!     dry_run: false,
@@ -87,8 +88,10 @@ impl Default for DefaultConfig {
 /// Configuration for towboat deployment
 #[derive(Debug)]
 pub struct Config {
-    /// Source directory containing dotfiles
+    /// Source directory containing dotfiles (package directory)
     pub source_dir: PathBuf,
+    /// Stow directory containing all packages
+    pub stow_dir: PathBuf,
     /// Target directory where files will be deployed
     pub target_dir: PathBuf,
     /// Build tag to match for deployment (e.g., "linux", "macos", "windows")
@@ -190,13 +193,9 @@ fn compute_hash(content: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-/// Get the cache file path
-fn get_cache_path() -> Result<PathBuf> {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .context("Could not determine home directory")?;
-
-    let cache_dir = PathBuf::from(home).join(".cache").join("towboat");
+/// Get the cache file path based on the stow directory
+fn get_cache_path(stow_dir: &Path) -> Result<PathBuf> {
+    let cache_dir = stow_dir.join(".towboat");
     fs::create_dir_all(&cache_dir).context(format!(
         "Failed to create cache directory: {}",
         cache_dir.display()
@@ -206,8 +205,8 @@ fn get_cache_path() -> Result<PathBuf> {
 }
 
 /// Load cache from disk
-pub fn load_cache() -> Result<Cache> {
-    let cache_path = get_cache_path()?;
+pub fn load_cache(stow_dir: &Path) -> Result<Cache> {
+    let cache_path = get_cache_path(stow_dir)?;
 
     if !cache_path.exists() {
         return Ok(Cache::default());
@@ -227,8 +226,8 @@ pub fn load_cache() -> Result<Cache> {
 }
 
 /// Save cache to disk
-pub fn save_cache(cache: &Cache) -> Result<()> {
-    let cache_path = get_cache_path()?;
+pub fn save_cache(cache: &Cache, stow_dir: &Path) -> Result<()> {
+    let cache_path = get_cache_path(stow_dir)?;
 
     let content = toml::to_string_pretty(cache).context("Failed to serialize cache")?;
 
@@ -488,7 +487,8 @@ pub fn create_symlink_or_file(
                 let link_canon = if link_target.is_absolute() {
                     link_target.canonicalize().ok()
                 } else {
-                    parent_dir.parent()
+                    parent_dir
+                        .parent()
                         .and_then(|p| p.join(&link_target).canonicalize().ok())
                 };
 
@@ -788,7 +788,8 @@ pub fn remove_symlink_or_file(target: &Path, dry_run: bool) -> Result<()> {
 /// use std::path::PathBuf;
 ///
 /// let config = Config {
-///     source_dir: PathBuf::from("./dotfiles"),
+///     source_dir: PathBuf::from("./dotfiles/home"),
+///     stow_dir: PathBuf::from("./dotfiles"),
 ///     target_dir: PathBuf::from("/home/user"),
 ///     build_tag: "linux".to_string(),
 ///     dry_run: true, // Preview mode
@@ -816,7 +817,7 @@ pub fn run_towboat(config: Config) -> Result<()> {
 
     // Load cache (only needed if not in remove mode)
     let mut cache = if !config.remove {
-        load_cache()?
+        load_cache(&config.stow_dir)?
     } else {
         Cache::default()
     };
@@ -882,7 +883,7 @@ pub fn run_towboat(config: Config) -> Result<()> {
 
         // Save cache after successful deployment (not in dry-run mode)
         if !config.dry_run {
-            save_cache(&cache)?;
+            save_cache(&cache, &config.stow_dir)?;
         }
 
         if config.dry_run {
@@ -1059,6 +1060,41 @@ alias ls='dir'
         assert!(result.contains("alias ls='ls -G'"));
         assert!(!result.contains("alias ls='ls --color=auto'"));
         assert!(!result.contains("alias ls='dir'"));
+    }
+
+    #[test]
+    fn test_process_file_with_toml_style_tags() {
+        // Test TOML files where commented lines are part of the build tag
+        let content = r#"[font]
+# {linux-
+# size = 10.0
+# -linux}
+# {macos-
+size = 16.0
+# -macos}
+"#;
+
+        let result_macos = process_file_with_build_tags(content, "macos").unwrap();
+        assert!(
+            result_macos.contains("size = 16.0"),
+            "Expected 'size = 16.0' in macos result, got:\n{}",
+            result_macos
+        );
+        assert!(
+            !result_macos.contains("# size = 10.0"),
+            "Should not contain linux commented line"
+        );
+
+        let result_linux = process_file_with_build_tags(content, "linux").unwrap();
+        assert!(
+            result_linux.contains("# size = 10.0"),
+            "Expected '# size = 10.0' in linux result, got:\n{}",
+            result_linux
+        );
+        assert!(
+            !result_linux.contains("size = 16.0"),
+            "Should not contain macos line"
+        );
     }
 
     #[test]

@@ -248,7 +248,8 @@ Then deploy with: `towboat bash`, `towboat vim`, etc.
   - Regex-based parsing of build tag sections within files (`# {tag-...# -tag}`)
 - **Cache System**:
   - SHA256-based checksum tracking for processed files
-  - Stored in `~/.cache/towboat/checksums.toml`
+  - Stored in `.towboat/checksums.toml` within the stow directory (e.g., `dotfiles/.towboat/`)
+  - Cache is local to each dotfiles repository
   - Detects manual modifications to deployed files
   - Prevents accidental overwrites of user edits
 - **File Discovery**: Uses walkdir to recursively find matching files and directories based on configuration
