@@ -41,6 +41,7 @@ pub struct TargetConfig {
     /// If not specified, defaults to the source filename/dirname
     #[serde(default)]
     pub target: Option<String>,
+
     /// Build tags this target should be included for
     pub tags: Vec<String>,
 }
@@ -50,6 +51,7 @@ pub struct TargetConfig {
 pub struct DefaultConfig {
     /// Whether to include all files/directories not explicitly configured
     pub include_all: bool,
+
     /// Default tag to assign to files/directories that are not explicitly configured
     #[serde(default = "default_tag")]
     pub default_tag: String,
@@ -62,15 +64,19 @@ fn default_tag() -> String {
 /// boat.toml configuration file structure
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BoatConfig {
+
     /// Target configurations (files and directories)
     #[serde(default)]
     pub targets: HashMap<String, TargetConfig>,
+
     /// Default behavior configuration
     #[serde(default)]
     pub default: Option<DefaultConfig>,
+
     /// Target directory for this package (overrides CLI target)
     #[serde(default)]
     pub target_dir: Option<String>,
+
     /// Default build tags for this package
     #[serde(default)]
     pub build_tags: Option<Vec<String>>,
@@ -89,19 +95,23 @@ impl Default for DefaultConfig {
 #[derive(Debug)]
 pub struct Config {
     /// Source directory containing dotfiles (package directory)
-    pub source_dir: PathBuf,
-    /// Stow directory containing all packages
-    pub stow_dir: PathBuf,
+    pub package: PathBuf,
+
     /// Target directory where files will be deployed
     pub target_dir: PathBuf,
+
     /// Build tag to match for deployment (e.g., "linux", "macos", "windows")
     pub build_tag: String,
+
     /// Whether to run in dry-run mode (show what would be done without making changes)
     pub dry_run: bool,
+
     /// Whether to overwrite existing files in target directory
     pub force: bool,
+
     /// Whether to adopt existing files from target back to source
     pub adopt: bool,
+
     /// Whether to remove symlinks/files from target directory
     pub remove: bool,
 }
@@ -111,10 +121,16 @@ pub struct Config {
 pub struct CacheEntry {
     /// Source file path
     pub source_path: String,
+
     /// SHA256 hash of source file content
     pub source_hash: String,
+
+    /// Deployed file path
+    pub deployed_path: String,
+
     /// SHA256 hash of the processed content that was deployed
     pub deployed_hash: String,
+
     /// Build tag used when processing
     pub build_tag: String,
 }
@@ -658,6 +674,7 @@ pub fn create_symlink_or_file(
                     CacheEntry {
                         source_path: source.to_string_lossy().to_string(),
                         source_hash,
+                        deployed_path: target.to_string_lossy().to_string(),
                         deployed_hash: processed_hash,
                         build_tag: build_tag.to_string(),
                     },
@@ -802,10 +819,10 @@ pub fn remove_symlink_or_file(target: &Path, dry_run: bool) -> Result<()> {
 /// // run_towboat(config).unwrap();
 /// ```
 pub fn run_towboat(config: Config) -> Result<()> {
-    if !config.source_dir.exists() {
+    if !config.package.exists() {
         return Err(anyhow::anyhow!(
             "Source directory does not exist: {}",
-            config.source_dir.display()
+            config.package.display()
         ));
     }
 
@@ -817,13 +834,13 @@ pub fn run_towboat(config: Config) -> Result<()> {
 
     // Load cache (only needed if not in remove mode)
     let mut cache = if !config.remove {
-        load_cache(&config.stow_dir)?
+        load_cache(&config.package)?
     } else {
         Cache::default()
     };
 
     println!("Towboat - Cross-platform dotfile manager");
-    println!("Source: {}", config.source_dir.display());
+    println!("Source: {}", config.package.display());
     println!("Target: {}", target_dir.display());
     println!("Build tag: {}", config.build_tag);
     if config.dry_run {
@@ -831,7 +848,7 @@ pub fn run_towboat(config: Config) -> Result<()> {
     }
     println!();
 
-    let matching_files = discover_files_with_boat_config(&config.source_dir, &config.build_tag)?;
+    let matching_files = discover_files_with_boat_config(&config.package, &config.build_tag)?;
 
     if matching_files.is_empty() {
         println!("No files found matching build tag '{}'", config.build_tag);
@@ -883,7 +900,7 @@ pub fn run_towboat(config: Config) -> Result<()> {
 
         // Save cache after successful deployment (not in dry-run mode)
         if !config.dry_run {
-            save_cache(&cache, &config.stow_dir)?;
+            save_cache(&cache, &config.package)?;
         }
 
         if config.dry_run {
