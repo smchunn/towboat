@@ -90,7 +90,7 @@ source → resolve (tags + templates) → .towboat/resolved/ → symlink → tar
 
 - **Build**: `cargo build`
 - **Run**: `cargo run -- --help`
-- **Test**: `cargo test` (101 tests: unit + integration)
+- **Test**: `cargo test` (130 tests: unit + integration + property-based)
 - **Check**: `cargo check`
 - **Format**: `cargo fmt`
 - **Lint**: `cargo clippy`
@@ -149,9 +149,12 @@ ssh = { tags = ["work"] }
 
 ### Package Config (`boat.toml`)
 
-Per-package configuration in each package directory:
+Per-package configuration in each package directory. Subdirectories may contain their own `boat.toml` which takes precedence over the parent config.
 
 ```toml
+target_dir = "~/.config"                                # Override target directory
+build_tags = ["production"]                              # Default tags for this package
+
 [targets]
 ".bashrc" = { tags = "linux & laptop" }       # Tag expression
 ".profile" = { tags = ["linux", "macos"] }     # Tag list (ORed)
@@ -217,6 +220,7 @@ src/
 ├── lib.rs               # Public API re-exports
 ├── error.rs             # TowboatError enum (thiserror)
 ├── config/
+│   ├── mod.rs           # Module exports
 │   ├── manifest.rs      # towboat.toml parsing
 │   └── package.rs       # boat.toml parsing
 ├── tags/
@@ -224,16 +228,20 @@ src/
 │   ├── parser.rs        # In-file multi-syntax tag parsing
 │   └── matcher.rs       # Tag expression parsing (recursive descent)
 ├── template/
+│   ├── mod.rs           # Module exports
 │   └── engine.rs        # ${{ var }} substitution
 ├── resolve/
 │   ├── mod.rs           # ResolvedFile, ResolveOutcome types
 │   └── resolver.rs      # resolve_file(), resolve_package()
 ├── deploy/
+│   ├── mod.rs           # Module exports
 │   ├── symlink.rs       # Symlink CRUD + state checking
 │   └── lock.rs          # Lock file load/save/query
 ├── discovery/
+│   ├── mod.rs           # Module exports
 │   └── walker.rs        # Directory traversal with boat.toml
 └── commands/
+    ├── mod.rs            # Module exports
     ├── sync.rs           # towboat sync
     ├── status.rs         # towboat status
     ├── diff.rs           # towboat diff
@@ -248,13 +256,15 @@ src/
   - Source changed, resolved didn't → safe to re-resolve
   - Resolved changed, source didn't → user drift (preserved)
   - Both changed → conflict (requires `--force`)
+- **Cleanup**: Sync removes symlinks and resolved files for entries dropped from config, or for packages whose tag requirements no longer match.
 - **Error Handling**: Library uses `thiserror` (`TowboatError`), commands use `anyhow::Result` with context. Conflicts are non-fatal and collected.
 
 ## Testing
 
-101 tests total:
-- **Unit tests** (86): Tag expression parsing, in-file tag processing, template engine, config parsing, lock file state, symlink operations, directory discovery
-- **Integration tests** (15): Full sync workflow, dry-run, force mode, source change detection, idempotency, CLI subcommands
+130 tests total:
+- **Unit tests** (88): Tag expression parsing, in-file tag processing, template engine, config parsing, lock file state, symlink operations, directory discovery
+- **Integration tests** (27): Full sync workflow, dry-run, force mode, source change detection, idempotency, CLI subcommands
+- **Property-based tests** (15): `proptest`-driven fuzzing of tag expressions, template engine, and config parsing
 
 ## Dependencies
 
@@ -266,3 +276,10 @@ src/
 - `sha2` + `hex` — content hashing
 - `chrono` — lock file timestamps
 - `regex` — (retained, minimal usage)
+
+### Dev Dependencies
+
+- `tempfile` — temporary directories for tests
+- `assert_cmd` — CLI integration testing
+- `predicates` — assertion helpers for CLI output
+- `proptest` — property-based testing
