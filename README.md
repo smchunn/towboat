@@ -5,7 +5,7 @@ A cross-platform dotfile manager with build tags and template variables. Every f
 ## Features
 
 - **Build Tags** with boolean expressions: `"linux & laptop"`, `"macos | default"`, `"!windows"`
-- **Template Variables**: `{{ hostname }}`, `{{ email }}` — substituted from manifest
+- **Template Variables**: `${{ hostname }}`, `${{ email }}` — substituted from manifest
 - **Multiple Comment Syntaxes**: `#`, `//`, `--`, `;` for in-file tag sections
 - **Three-way Drift Detection**: knows when source changed, resolved was edited, or both
 - **Subcommand CLI**: `sync`, `status`, `diff`, `init`
@@ -65,7 +65,7 @@ alias ls='ls --color=auto'
 alias ls='ls -G'
 # -macos}
 
-export HOSTNAME="{{ hostname }}"
+export HOSTNAME="${{ hostname }}"
 EOF
 ```
 
@@ -87,7 +87,7 @@ source → resolve (tags + templates) → .towboat/resolved/ → symlink → tar
 
 1. `towboat sync` reads `towboat.toml` for active tags and variables
 2. For each package, discovers files matching active tags via `boat.toml`
-3. Resolves each file: strips non-matching tag sections, substitutes `{{ variables }}`
+3. Resolves each file: strips non-matching tag sections, substitutes `${{ variables }}`
 4. Writes resolved files to `.towboat/resolved/<package>/`
 5. Creates symlinks from target (e.g. `~/.bashrc`) to resolved files
 6. Updates `towboat.lock` with source + resolved hashes for drift detection
@@ -101,8 +101,8 @@ source → resolve (tags + templates) → .towboat/resolved/ → symlink → tar
 tags = ["macos", "laptop", "work"]    # Active tags for this system
 
 [variables]
-hostname = "macbook-pro"               # Available as {{ hostname }}
-email = "user@work.com"                # Available as {{ email }}
+hostname = "macbook-pro"               # Available as ${{ hostname }}
+email = "user@work.com"                # Available as ${{ email }}
 
 [packages]
 bash = {}                              # Deploy with system tags
@@ -160,11 +160,11 @@ Open and close markers must use the same comment prefix.
 ### Template Variables
 
 ```
-host = {{ hostname }}
-email = {{ email }}
+host = ${{ hostname }}
+email = ${{ email }}
 ```
 
-Undefined variables are hard errors. Escape with `\{{`.
+Undefined variables are hard errors. Escape with `\${{`.
 
 ## Drift Detection
 
