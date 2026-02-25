@@ -10,6 +10,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::package::{DefaultConfig, PackageConfig, TargetConfig};
 use crate::error::{Result, TowboatError};
 
 /// Top-level `towboat.toml` manifest.
@@ -37,11 +38,54 @@ pub struct SystemConfig {
 ///
 /// An empty table `bash = {}` means "deploy with system tags".
 /// `vim = { tags = ["development"] }` means "only deploy when these extra tags match".
+///
+/// Optionally embeds full `PackageConfig` fields inline, making `boat.toml` optional.
+/// If inline config is provided, no `boat.toml` should exist (error if both present).
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct PackageEntry {
     /// Additional tags required for this package (ANDed with system tags).
     #[serde(default)]
     pub tags: Vec<String>,
+
+    // --- Inline PackageConfig fields (optional) ---
+    /// Override target directory for this package (supports `~` expansion).
+    #[serde(default)]
+    pub target_dir: Option<String>,
+
+    /// Default build tags for this package.
+    #[serde(default)]
+    pub build_tags: Option<Vec<String>>,
+
+    /// Unified target configurations for files and directories.
+    #[serde(default)]
+    pub targets: HashMap<String, TargetConfig>,
+
+    /// Default behavior for unconfigured files.
+    #[serde(default)]
+    pub default: Option<DefaultConfig>,
+}
+
+impl PackageEntry {
+    /// Returns `true` if any inline `PackageConfig` fields are set.
+    pub fn has_inline_config(&self) -> bool {
+        self.target_dir.is_some()
+            || self.build_tags.is_some()
+            || !self.targets.is_empty()
+            || self.default.is_some()
+    }
+
+    /// Convert the inline fields to a `PackageConfig`, if any are set.
+    pub fn to_package_config(&self) -> Option<PackageConfig> {
+        if !self.has_inline_config() {
+            return None;
+        }
+        Some(PackageConfig {
+            target_dir: self.target_dir.clone(),
+            build_tags: self.build_tags.clone(),
+            targets: self.targets.clone(),
+            default: self.default.clone(),
+        })
+    }
 }
 
 impl SystemManifest {
@@ -132,5 +176,126 @@ bash = {}
         assert!(manifest.system.tags.is_empty());
         assert!(manifest.variables.is_empty());
         assert!(manifest.packages.is_empty());
+    }
+
+    #[test]
+    fn parse_inline_package_config() {
+        let toml_str = r#"
+[system]
+tags = ["macos", "nvim"]
+
+[packages.home]
+target_dir = "~"
+
+[packages.home.targets]
+".bashrc" = { tags = ["macos"] }
+".vimrc" = { tags = ["macos", "linux"] }
+"#;
+        let manifest: SystemManifest = toml::from_str(toml_str).unwrap();
+        let home = &manifest.packages["home"];
+        assert!(home.has_inline_config());
+        assert_eq!(home.target_dir, Some("~".to_string()));
+        assert_eq!(home.targets.len(), 2);
+
+        let config = home.to_package_config().unwrap();
+        assert_eq!(config.target_dir, Some("~".to_string()));
+        assert_eq!(config.targets.len(), 2);
+    }
+
+    #[test]
+    fn parse_mixed_packages() {
+        let toml_str = r#"
+[system]
+tags = ["linux"]
+
+[packages]
+bash = {}
+vim = { tags = ["development"] }
+
+[packages.home]
+target_dir = "~"
+
+[packages.home.targets]
+".bashrc" = { tags = ["linux"] }
+"#;
+        let manifest: SystemManifest = toml::from_str(toml_str).unwrap();
+        assert_eq!(manifest.packages.len(), 3);
+
+        assert!(!manifest.packages["bash"].has_inline_config());
+        assert!(!manifest.packages["vim"].has_inline_config());
+        assert!(manifest.packages["home"].has_inline_config());
+    }
+
+    #[test]
+    fn has_inline_config_detection() {
+        let empty = PackageEntry::default();
+        assert!(!empty.has_inline_config());
+
+        let with_target_dir = PackageEntry {
+            target_dir: Some("~".to_string()),
+            ..Default::default()
+        };
+        assert!(with_target_dir.has_inline_config());
+
+        let with_targets = PackageEntry {
+            targets: {
+                let mut m = HashMap::new();
+                m.insert(
+                    ".bashrc".to_string(),
+                    TargetConfig {
+                        target: None,
+                        tags: crate::config::package::TagsSpec::List(vec!["linux".to_string()]),
+                    },
+                );
+                m
+            },
+            ..Default::default()
+        };
+        assert!(with_targets.has_inline_config());
+
+        let with_default = PackageEntry {
+            default: Some(DefaultConfig {
+                include_all: true,
+                default_tag: "default".to_string(),
+            }),
+            ..Default::default()
+        };
+        assert!(with_default.has_inline_config());
+    }
+
+    #[test]
+    fn to_package_config_conversion() {
+        let entry = PackageEntry {
+            tags: vec!["work".to_string()],
+            target_dir: Some("~".to_string()),
+            build_tags: Some(vec!["production".to_string()]),
+            targets: {
+                let mut m = HashMap::new();
+                m.insert(
+                    ".bashrc".to_string(),
+                    TargetConfig {
+                        target: None,
+                        tags: crate::config::package::TagsSpec::List(vec!["linux".to_string()]),
+                    },
+                );
+                m
+            },
+            default: Some(DefaultConfig {
+                include_all: true,
+                default_tag: "default".to_string(),
+            }),
+        };
+
+        let config = entry.to_package_config().unwrap();
+        assert_eq!(config.target_dir, Some("~".to_string()));
+        assert_eq!(config.build_tags, Some(vec!["production".to_string()]));
+        assert_eq!(config.targets.len(), 1);
+        assert!(config.default.unwrap().include_all);
+    }
+
+    #[test]
+    fn to_package_config_none_when_empty() {
+        let entry = PackageEntry::default();
+        assert!(entry.to_package_config().is_none());
     }
 }

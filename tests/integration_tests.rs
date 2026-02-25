@@ -746,3 +746,148 @@ fn lock_file_persists_across_syncs() {
     let lock_content2 = fs::read_to_string(stow.path().join(".towboat/towboat.lock")).unwrap();
     assert!(lock_content2.contains("version = 1"));
 }
+
+// --- Inline config tests ---
+
+#[test]
+fn sync_with_inline_config() {
+    let dir = TempDir::new().unwrap();
+    let target = TempDir::new().unwrap();
+
+    // towboat.toml with inline package config (no boat.toml)
+    fs::write(
+        dir.path().join("towboat.toml"),
+        r#"
+[system]
+tags = ["linux"]
+
+[packages.myapp]
+target_dir = "~"
+
+[packages.myapp.targets]
+".apprc" = { tags = ["linux"] }
+".appconf" = { tags = ["linux", "macos"] }
+"#,
+    )
+    .unwrap();
+
+    let pkg = dir.path().join("myapp");
+    fs::create_dir_all(&pkg).unwrap();
+    fs::write(pkg.join(".apprc"), "app config\n").unwrap();
+    fs::write(pkg.join(".appconf"), "app conf\n").unwrap();
+
+    towboat::commands::sync::run(dir.path(), target.path(), None, false, false).unwrap();
+
+    assert!(
+        target.path().join(".apprc").is_symlink(),
+        ".apprc should be deployed from inline config"
+    );
+    assert!(
+        target.path().join(".appconf").is_symlink(),
+        ".appconf should be deployed from inline config"
+    );
+
+    let content = fs::read_to_string(target.path().join(".apprc")).unwrap();
+    assert_eq!(content, "app config\n");
+}
+
+#[test]
+fn sync_inline_and_boat_toml_errors() {
+    let dir = TempDir::new().unwrap();
+    let target = TempDir::new().unwrap();
+
+    // towboat.toml with inline config
+    fs::write(
+        dir.path().join("towboat.toml"),
+        r#"
+[system]
+tags = ["linux"]
+
+[packages.conflicting]
+target_dir = "~"
+
+[packages.conflicting.targets]
+".bashrc" = { tags = ["linux"] }
+"#,
+    )
+    .unwrap();
+
+    // Also create a boat.toml in the package directory
+    let pkg = dir.path().join("conflicting");
+    fs::create_dir_all(&pkg).unwrap();
+    fs::write(
+        pkg.join("boat.toml"),
+        r#"
+[targets]
+".bashrc" = { tags = ["linux"] }
+"#,
+    )
+    .unwrap();
+    fs::write(pkg.join(".bashrc"), "content\n").unwrap();
+
+    let result = towboat::commands::sync::run(dir.path(), target.path(), None, false, false);
+    assert!(result.is_err(), "Should error when both inline config and boat.toml exist");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("both inline config") || err.contains("single source"),
+        "Error should mention conflicting config sources: {err}"
+    );
+}
+
+#[test]
+fn sync_mixed_inline_and_external() {
+    let dir = TempDir::new().unwrap();
+    let target = TempDir::new().unwrap();
+
+    // Package A: inline config, Package B: boat.toml
+    fs::write(
+        dir.path().join("towboat.toml"),
+        r#"
+[system]
+tags = ["linux"]
+
+[packages]
+external = {}
+
+[packages.inline_pkg]
+[packages.inline_pkg.targets]
+".inlinerc" = { tags = ["linux"] }
+"#,
+    )
+    .unwrap();
+
+    // External package with boat.toml
+    let ext_pkg = dir.path().join("external");
+    fs::create_dir_all(&ext_pkg).unwrap();
+    fs::write(
+        ext_pkg.join("boat.toml"),
+        r#"
+[targets]
+".extrc" = { tags = ["linux"] }
+"#,
+    )
+    .unwrap();
+    fs::write(ext_pkg.join(".extrc"), "external content\n").unwrap();
+
+    // Inline package (no boat.toml)
+    let inline_pkg = dir.path().join("inline_pkg");
+    fs::create_dir_all(&inline_pkg).unwrap();
+    fs::write(inline_pkg.join(".inlinerc"), "inline content\n").unwrap();
+
+    towboat::commands::sync::run(dir.path(), target.path(), None, false, false).unwrap();
+
+    assert!(
+        target.path().join(".extrc").is_symlink(),
+        "External package file should be deployed"
+    );
+    assert!(
+        target.path().join(".inlinerc").is_symlink(),
+        "Inline package file should be deployed"
+    );
+
+    let ext_content = fs::read_to_string(target.path().join(".extrc")).unwrap();
+    assert_eq!(ext_content, "external content\n");
+
+    let inline_content = fs::read_to_string(target.path().join(".inlinerc")).unwrap();
+    assert_eq!(inline_content, "inline content\n");
+}

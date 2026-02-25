@@ -7,7 +7,6 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 
 use crate::config::manifest::SystemManifest;
-use crate::config::package::PackageConfig;
 use crate::deploy::lock::{FileState, LockEntry, LockFile};
 use crate::deploy::symlink;
 use crate::discovery::walker;
@@ -57,7 +56,7 @@ pub fn run(
             continue;
         }
 
-        let config = load_package_config(&pkg_dir)?;
+        let config = crate::config::resolve_package_config(pkg_name, &pkg_dir, pkg_entry)?;
 
         // Check package-level tag requirements
         if !pkg_entry.tags.is_empty() && !pkg_entry.tags.iter().all(|t| active_tags.contains(t)) {
@@ -209,28 +208,6 @@ pub fn run(
     }
 
     Ok(())
-}
-
-fn load_package_config(pkg_dir: &Path) -> Result<PackageConfig> {
-    let boat_toml = pkg_dir.join("boat.toml");
-    if boat_toml.exists() {
-        PackageConfig::load(&boat_toml).with_context(|| {
-            format!(
-                "Failed to load boat.toml for package at {}",
-                pkg_dir.display()
-            )
-        })
-    } else {
-        Ok(PackageConfig {
-            target_dir: None,
-            build_tags: None,
-            targets: std::collections::HashMap::new(),
-            default: Some(crate::config::package::DefaultConfig {
-                include_all: true,
-                default_tag: "default".to_string(),
-            }),
-        })
-    }
 }
 
 fn cleanup_package(

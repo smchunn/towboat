@@ -19,15 +19,23 @@ tags = ["default"]
 # email = "user@example.com"
 
 [packages]
+# External config: package uses a boat.toml in its directory
 # bash = {}
 # vim = { tags = ["development"] }
+
+# Inline config (no boat.toml needed):
+# [packages.home]
+# target_dir = "~"
+# [packages.home.targets]
+# ".bashrc" = { tags = ["linux"] }
+# ".vimrc" = { tags = ["linux", "macos"] }
 "#;
 
     std::fs::write(&manifest_path, content)?;
     println!("Created {}", manifest_path.display());
     println!("\nNext steps:");
     println!("  1. Edit towboat.toml to set your system tags and packages");
-    println!("  2. Create package directories with boat.toml files");
+    println!("  2. Add package config — either inline in towboat.toml or via boat.toml files");
     println!("  3. Run `towboat sync` to deploy");
 
     Ok(())

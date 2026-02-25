@@ -5,7 +5,6 @@ use std::path::Path;
 use anyhow::{Context, Result};
 
 use crate::config::manifest::SystemManifest;
-use crate::config::package::PackageConfig;
 use crate::deploy::lock::LockFile;
 use crate::resolve::resolver::{compute_hash, resolve_file};
 
@@ -35,26 +34,13 @@ pub fn run(stow_dir: &Path, _target_dir: &Path, package_filter: Option<&str>) ->
 
     let mut any_changes = false;
 
-    for (pkg_name, _pkg_entry) in &packages {
+    for (pkg_name, pkg_entry) in &packages {
         let pkg_dir = stow_dir.join(pkg_name);
         if !pkg_dir.exists() {
             continue;
         }
 
-        let boat_toml = pkg_dir.join("boat.toml");
-        let config = if boat_toml.exists() {
-            PackageConfig::load(&boat_toml)?
-        } else {
-            PackageConfig {
-                target_dir: None,
-                build_tags: None,
-                targets: std::collections::HashMap::new(),
-                default: Some(crate::config::package::DefaultConfig {
-                    include_all: true,
-                    default_tag: "default".to_string(),
-                }),
-            }
-        };
+        let config = crate::config::resolve_package_config(pkg_name, &pkg_dir, pkg_entry)?;
 
         let discovered =
             crate::discovery::walker::discover_package(&pkg_dir, &config, &active_tags)?;
