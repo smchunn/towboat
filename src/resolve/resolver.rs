@@ -156,7 +156,7 @@ echo common
     fn resolve_file_with_templates() {
         let dir = TempDir::new().unwrap();
         let file = dir.path().join("config");
-        fs::write(&file, "host = {{ hostname }}\nemail = {{ email }}").unwrap();
+        fs::write(&file, "host = ${{ hostname }}\nemail = ${{ email }}").unwrap();
 
         let (content, had_tags) = resolve_file(
             &file,
@@ -176,7 +176,7 @@ echo common
         fs::write(
             &file,
             "\
-host = {{ hostname }}
+host = ${{ hostname }}
 # {linux-
 path = /usr/bin
 # -linux}
@@ -269,7 +269,7 @@ export PATH=$PATH
 
         fs::write(
             pkg_dir.join(".gitconfig"),
-            "[user]\n    name = {{ git_name }}\n    email = {{ git_email }}\n",
+            "[user]\n    name = ${{ git_name }}\n    email = ${{ git_email }}\n",
         )
         .unwrap();
 
@@ -307,7 +307,7 @@ export PATH=$PATH
         )
         .unwrap();
 
-        fs::write(pkg_dir.join("config"), "host = {{ undefined_var }}").unwrap();
+        fs::write(pkg_dir.join("config"), "host = ${{ undefined_var }}").unwrap();
 
         let config = PackageConfig::load(&pkg_dir.join("boat.toml")).unwrap();
         let resolved_dir = stow_dir.path().join(".towboat/resolved");

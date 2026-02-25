@@ -70,7 +70,7 @@ alias ls='ls -G'
     .unwrap();
     fs::write(
         git_dir.join(".gitconfig"),
-        "[user]\n    name = {{ hostname }}\n    email = {{ email }}\n",
+        "[user]\n    name = ${{ hostname }}\n    email = ${{ email }}\n",
     )
     .unwrap();
 
@@ -272,7 +272,7 @@ fn resolve_file_api() {
     let file = dir.path().join("test.conf");
     fs::write(
         &file,
-        "host = {{ hostname }}\n# {linux-\npath = /usr\n# -linux}\n",
+        "host = ${{ hostname }}\n# {linux-\npath = /usr\n# -linux}\n",
     )
     .unwrap();
 
@@ -619,7 +619,7 @@ fn resolve_with_both_tags_and_templates() {
     let file = dir.path().join("test.conf");
     fs::write(
         &file,
-        "host = {{ hostname }}\n# {linux-\npath = /usr\nemail = {{ email }}\n# -linux}\n# {macos-\npath = /opt\n# -macos}\n",
+        "host = ${{ hostname }}\n# {linux-\npath = /usr\nemail = ${{ email }}\n# -linux}\n# {macos-\npath = /opt\n# -macos}\n",
     )
     .unwrap();
 
@@ -642,7 +642,7 @@ fn resolve_with_both_tags_and_templates() {
 fn resolve_undefined_variable_errors() {
     let dir = TempDir::new().unwrap();
     let file = dir.path().join("test.conf");
-    fs::write(&file, "value = {{ undefined_var }}\n").unwrap();
+    fs::write(&file, "value = ${{ undefined_var }}\n").unwrap();
 
     let tags: HashSet<String> = HashSet::new();
     let vars: HashMap<String, String> = HashMap::new();

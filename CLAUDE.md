@@ -185,11 +185,11 @@ Supported prefixes: `#`, `//`, `--`, `;`. Open/close must use the same prefix. T
 
 ### Template Variables
 
-`{{ var }}` placeholders are substituted from `towboat.toml [variables]`. Undefined variables are hard errors.
+`${{ var }}` placeholders are substituted from `towboat.toml [variables]`. Undefined variables are hard errors.
 
 ```
-host = {{ hostname }}
-email = {{ email }}
+host = ${{ hostname }}
+email = ${{ email }}
 ```
 
 ## Directory Layout
@@ -224,7 +224,7 @@ src/
 │   ├── parser.rs        # In-file multi-syntax tag parsing
 │   └── matcher.rs       # Tag expression parsing (recursive descent)
 ├── template/
-│   └── engine.rs        # {{ var }} substitution
+│   └── engine.rs        # ${{ var }} substitution
 ├── resolve/
 │   ├── mod.rs           # ResolvedFile, ResolveOutcome types
 │   └── resolver.rs      # resolve_file(), resolve_package()

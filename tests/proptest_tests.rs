@@ -115,13 +115,16 @@ proptest! {
         tag in tag_name_strategy(),
         body in "[a-zA-Z0-9 =_.]{1,50}",
     ) {
-        let content = format!("before\n# {{{tag}-\n{body}\n# -{tag}}}\nafter\n");
+        // Prefix body with unique marker to avoid false substring matches
+        // against the surrounding "XXX"/"YYY" text
+        let body_line = format!("BODY_{body}");
+        let content = format!("XXX\n# {{{tag}-\n{body_line}\n# -{tag}}}\nYYY\n");
         let tags: HashSet<String> = [tag.as_str()].iter().map(|s| s.to_string()).collect();
         let result = parser::process_tags(&content, &tags).unwrap();
         prop_assert!(result.had_tags);
-        prop_assert!(result.content.contains(&body));
-        prop_assert!(result.content.contains("before"));
-        prop_assert!(result.content.contains("after"));
+        prop_assert!(result.content.contains(&body_line));
+        prop_assert!(result.content.contains("XXX"));
+        prop_assert!(result.content.contains("YYY"));
     }
 
     #[test]
@@ -129,13 +132,14 @@ proptest! {
         tag in tag_name_strategy(),
         body in "[a-zA-Z0-9 =_.]{1,50}",
     ) {
-        let content = format!("before\n# {{{tag}-\n{body}\n# -{tag}}}\nafter\n");
+        let body_line = format!("BODY_{body}");
+        let content = format!("XXX\n# {{{tag}-\n{body_line}\n# -{tag}}}\nYYY\n");
         let tags: HashSet<String> = ["__nonexistent__"].iter().map(|s| s.to_string()).collect();
         let result = parser::process_tags(&content, &tags).unwrap();
         prop_assert!(result.had_tags);
-        prop_assert!(!result.content.contains(&body));
-        prop_assert!(result.content.contains("before"));
-        prop_assert!(result.content.contains("after"));
+        prop_assert!(!result.content.contains(&body_line));
+        prop_assert!(result.content.contains("XXX"));
+        prop_assert!(result.content.contains("YYY"));
     }
 }
 
@@ -147,7 +151,7 @@ proptest! {
         var_name in "[a-z_]{1,10}",
         var_value in "[a-zA-Z0-9_. -]{0,50}",
     ) {
-        let content = format!("prefix {{{{ {var_name} }}}} suffix");
+        let content = format!("prefix ${{{{ {var_name} }}}} suffix");
         let mut vars = HashMap::new();
         vars.insert(var_name.clone(), var_value.clone());
         let result = engine::render(&content, &vars).unwrap();
@@ -156,8 +160,8 @@ proptest! {
 
     #[test]
     fn no_templates_means_passthrough(content in "[a-zA-Z0-9 =_./\n]{1,200}") {
-        // Content without {{ should pass through unchanged
-        prop_assume!(!content.contains("{{"));
+        // Content without ${{ should pass through unchanged
+        prop_assume!(!content.contains("${{"));
         let vars: HashMap<String, String> = HashMap::new();
         let result = engine::render(&content, &vars).unwrap();
         prop_assert_eq!(result, content);
@@ -165,15 +169,15 @@ proptest! {
 
     #[test]
     fn escaped_braces_produce_literal(prefix in "[a-z]{1,10}", suffix in "[a-z]{1,10}") {
-        let content = format!("{prefix} \\{{{{ not_a_var }}}} {suffix}");
+        let content = format!("{prefix} \\${{{{ not_a_var }}}} {suffix}");
         let vars: HashMap<String, String> = HashMap::new();
         let result = engine::render(&content, &vars).unwrap();
-        prop_assert!(result.contains("{{"));
+        prop_assert!(result.contains("${{"));
     }
 
     #[test]
     fn undefined_variable_is_error(var_name in "[a-z_]{1,10}") {
-        let content = format!("value = {{{{ {var_name} }}}}");
+        let content = format!("value = ${{{{ {var_name} }}}}");
         let vars: HashMap<String, String> = HashMap::new();
         let result = engine::render(&content, &vars);
         prop_assert!(result.is_err());
