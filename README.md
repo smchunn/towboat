@@ -25,7 +25,25 @@ cd ~/dotfiles
 towboat init
 ```
 
-2. **Edit `towboat.toml`**:
+2. **Edit `towboat.toml`** — inline config (simplest for single-package repos):
+
+```toml
+[system]
+tags = ["macos", "laptop", "work"]
+
+[variables]
+hostname = "macbook-pro"
+email = "user@work.com"
+
+[packages.home]
+target_dir = "~"
+
+[packages.home.targets]
+".bashrc" = { tags = "linux | macos" }
+".config/nvim" = { tags = ["macos", "linux"] }
+```
+
+Or use separate `boat.toml` files (better for multi-package setups):
 
 ```toml
 [system]
@@ -41,8 +59,6 @@ git = {}
 vim = { tags = ["development"] }
 ```
 
-3. **Create a package** with `boat.toml`:
-
 ```bash
 mkdir bash
 cat > bash/boat.toml << 'EOF'
@@ -51,7 +67,7 @@ cat > bash/boat.toml << 'EOF'
 EOF
 ```
 
-4. **Add dotfiles** with tags and templates:
+3. **Add dotfiles** with tags and templates:
 
 ```bash
 cat > bash/.bashrc << 'EOF'
@@ -69,7 +85,7 @@ export HOSTNAME="${{ hostname }}"
 EOF
 ```
 
-5. **Deploy**:
+4. **Deploy**:
 
 ```bash
 towboat sync              # Sync all packages
@@ -86,7 +102,7 @@ source → resolve (tags + templates) → .towboat/resolved/ → symlink → tar
 ```
 
 1. `towboat sync` reads `towboat.toml` for active tags and variables
-2. For each package, discovers files matching active tags via `boat.toml`
+2. For each package, discovers files matching active tags (via inline config or `boat.toml`)
 3. Resolves each file: strips non-matching tag sections, substitutes `${{ variables }}`
 4. Writes resolved files to `.towboat/resolved/<package>/`
 5. Creates symlinks from target (e.g. `~/.bashrc`) to resolved files
@@ -109,9 +125,29 @@ bash = {}                              # Deploy with system tags
 vim = { tags = ["development"] }       # Extra tag requirement
 ```
 
-### `boat.toml` (Per-Package Config)
+### Package Config
+
+Package configuration can live in one of two places — pick one per package:
+
+#### Option A: Inline in `towboat.toml` (recommended for simple repos)
 
 ```toml
+[packages.home]
+target_dir = "~"
+
+[packages.home.targets]
+".bashrc" = { tags = "linux & laptop" }
+".config/nvim" = { tags = ["macos", "linux"] }
+
+[packages.home.default]
+include_all = true
+default_tag = "default"
+```
+
+#### Option B: Separate `boat.toml` (better for multi-package setups)
+
+```toml
+# bash/boat.toml
 [targets]
 ".bashrc" = { tags = "linux & laptop" }           # Boolean expression
 ".profile" = { tags = ["linux", "macos"] }         # List (ORed together)
@@ -122,6 +158,15 @@ vim = { tags = ["development"] }       # Extra tag requirement
 include_all = true         # Include unconfigured files
 default_tag = "default"    # Tag for unconfigured files
 ```
+
+#### Precedence
+
+| Inline config? | `boat.toml` exists? | Behavior |
+|---|---|---|
+| Yes | No | Use inline |
+| No | Yes | Use `boat.toml` |
+| No | No | Default (`include_all: true`) |
+| Yes | Yes | **Error** — pick one |
 
 ### Tag Expressions
 
