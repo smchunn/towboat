@@ -11,3 +11,13 @@ pub mod error;
 pub mod resolve;
 pub mod tags;
 pub mod template;
+
+// Re-exports for convenience
+pub use config::manifest::SystemManifest;
+pub use config::package::PackageConfig;
+pub use deploy::lock::{FileState, LockEntry, LockFile};
+pub use deploy::symlink;
+pub use discovery::walker::DiscoveredFile;
+pub use error::{Result, TowboatError};
+pub use resolve::resolver::{compute_hash, resolve_file, resolve_package};
+pub use resolve::{ResolveOutcome, ResolvedFile};
