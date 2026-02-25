@@ -10,16 +10,17 @@ use crate::error::{Result, TowboatError};
 /// Creates parent directories as needed. Errors if the target already exists
 /// unless `force` is true.
 pub fn create_symlink(resolved_path: &Path, link_path: &Path, force: bool) -> Result<()> {
-    if let Some(parent) = link_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
     if link_path.exists() || link_path.is_symlink() {
         if force {
             remove_symlink(link_path)?;
         } else {
             return Err(TowboatError::TargetExists(link_path.to_path_buf()));
         }
+    }
+
+    // Ensure parent directory exists (must be after remove_symlink which may clean up parents)
+    if let Some(parent) = link_path.parent() {
+        fs::create_dir_all(parent)?;
     }
 
     #[cfg(unix)]

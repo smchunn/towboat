@@ -372,3 +372,377 @@ fn cli_sync_dry_run() {
     // Nothing should be created during dry run
     assert!(!target.path().join(".bashrc").exists());
 }
+
+// --- Edge case tests ---
+
+#[test]
+fn sync_package_removed_from_manifest_cleans_up() {
+    let stow = setup_stow_dir();
+    let target = TempDir::new().unwrap();
+
+    // First sync — all packages deployed
+    towboat::commands::sync::run(stow.path(), target.path(), None, false, false).unwrap();
+    assert!(target.path().join(".vimrc").is_symlink());
+
+    // Remove vim from manifest
+    fs::write(
+        stow.path().join("towboat.toml"),
+        r#"
+[system]
+tags = ["linux", "laptop", "work"]
+
+[variables]
+hostname = "workbox"
+email = "user@work.com"
+
+[packages]
+bash = {}
+git = {}
+"#,
+    )
+    .unwrap();
+
+    // Re-sync — vim should be cleaned up
+    towboat::commands::sync::run(stow.path(), target.path(), None, false, false).unwrap();
+    assert!(
+        !target.path().join(".vimrc").exists(),
+        ".vimrc should be removed after vim is dropped from manifest"
+    );
+}
+
+#[test]
+fn sync_file_removed_from_boat_toml_cleans_up() {
+    let stow = setup_stow_dir();
+    let target = TempDir::new().unwrap();
+
+    // First sync
+    towboat::commands::sync::run(stow.path(), target.path(), None, false, false).unwrap();
+    assert!(target.path().join(".profile").is_symlink());
+
+    // Remove .profile from boat.toml targets
+    fs::write(
+        stow.path().join("bash/boat.toml"),
+        r#"
+[targets]
+".bashrc" = { tags = "linux" }
+"#,
+    )
+    .unwrap();
+
+    // Re-sync bash
+    towboat::commands::sync::run(stow.path(), target.path(), Some("bash"), false, false).unwrap();
+    assert!(
+        !target.path().join(".profile").exists(),
+        ".profile should be removed after dropping from boat.toml"
+    );
+}
+
+#[test]
+fn sync_package_tag_requirement_not_met_skips() {
+    let dir = TempDir::new().unwrap();
+    let target = TempDir::new().unwrap();
+
+    fs::write(
+        dir.path().join("towboat.toml"),
+        r#"
+[system]
+tags = ["linux"]
+
+[packages]
+restricted = { tags = ["server"] }
+"#,
+    )
+    .unwrap();
+
+    let pkg = dir.path().join("restricted");
+    fs::create_dir_all(&pkg).unwrap();
+    fs::write(
+        pkg.join("boat.toml"),
+        r#"
+[targets]
+".config" = { tags = ["linux"] }
+"#,
+    )
+    .unwrap();
+    fs::write(pkg.join(".config"), "server only\n").unwrap();
+
+    towboat::commands::sync::run(dir.path(), target.path(), None, false, false).unwrap();
+
+    assert!(
+        !target.path().join(".config").exists(),
+        "Package with unmet tag requirement should not deploy"
+    );
+}
+
+#[test]
+fn sync_target_remap() {
+    let dir = TempDir::new().unwrap();
+    let target = TempDir::new().unwrap();
+
+    fs::write(
+        dir.path().join("towboat.toml"),
+        r#"
+[system]
+tags = ["linux"]
+
+[packages]
+myapp = {}
+"#,
+    )
+    .unwrap();
+
+    let pkg = dir.path().join("myapp");
+    fs::create_dir_all(&pkg).unwrap();
+    fs::write(
+        pkg.join("boat.toml"),
+        r#"
+[targets]
+"dev-config.sh" = { target = ".config.sh", tags = "linux" }
+"#,
+    )
+    .unwrap();
+    fs::write(pkg.join("dev-config.sh"), "export DEV=1\n").unwrap();
+
+    towboat::commands::sync::run(dir.path(), target.path(), None, false, false).unwrap();
+
+    assert!(
+        target.path().join(".config.sh").is_symlink(),
+        "Remapped target should be used"
+    );
+    assert!(
+        !target.path().join("dev-config.sh").exists(),
+        "Original name should not appear in target"
+    );
+    let content = fs::read_to_string(target.path().join(".config.sh")).unwrap();
+    assert!(content.contains("export DEV=1"));
+}
+
+#[test]
+fn sync_default_include_all() {
+    let dir = TempDir::new().unwrap();
+    let target = TempDir::new().unwrap();
+
+    fs::write(
+        dir.path().join("towboat.toml"),
+        r#"
+[system]
+tags = ["default"]
+
+[packages]
+misc = {}
+"#,
+    )
+    .unwrap();
+
+    let pkg = dir.path().join("misc");
+    fs::create_dir_all(&pkg).unwrap();
+    fs::write(
+        pkg.join("boat.toml"),
+        r#"
+[targets]
+
+[default]
+include_all = true
+default_tag = "default"
+"#,
+    )
+    .unwrap();
+    fs::write(pkg.join(".aliasrc"), "alias hi='echo hi'\n").unwrap();
+    fs::write(pkg.join(".envrc"), "export FOO=1\n").unwrap();
+
+    towboat::commands::sync::run(dir.path(), target.path(), None, false, false).unwrap();
+
+    assert!(
+        target.path().join(".aliasrc").is_symlink(),
+        "Unconfigured files should be included with include_all"
+    );
+    assert!(
+        target.path().join(".envrc").is_symlink(),
+        "Unconfigured files should be included with include_all"
+    );
+}
+
+#[test]
+fn sync_with_nested_directory() {
+    let dir = TempDir::new().unwrap();
+    let target = TempDir::new().unwrap();
+
+    fs::write(
+        dir.path().join("towboat.toml"),
+        r#"
+[system]
+tags = ["linux"]
+
+[packages]
+config = {}
+"#,
+    )
+    .unwrap();
+
+    let pkg = dir.path().join("config");
+    fs::create_dir_all(&pkg).unwrap();
+    fs::write(
+        pkg.join("boat.toml"),
+        r#"
+[targets]
+".config/myapp" = { tags = ["linux"] }
+"#,
+    )
+    .unwrap();
+    let nested = pkg.join(".config/myapp");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("settings.toml"), "theme = \"dark\"\n").unwrap();
+    fs::write(nested.join("keybinds.toml"), "save = \"ctrl+s\"\n").unwrap();
+
+    towboat::commands::sync::run(dir.path(), target.path(), None, false, false).unwrap();
+
+    assert!(
+        target
+            .path()
+            .join(".config/myapp/settings.toml")
+            .is_symlink()
+    );
+    assert!(
+        target
+            .path()
+            .join(".config/myapp/keybinds.toml")
+            .is_symlink()
+    );
+
+    let content = fs::read_to_string(target.path().join(".config/myapp/settings.toml")).unwrap();
+    assert!(content.contains("dark"));
+}
+
+#[test]
+fn resolve_with_both_tags_and_templates() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("test.conf");
+    fs::write(
+        &file,
+        "host = {{ hostname }}\n# {linux-\npath = /usr\nemail = {{ email }}\n# -linux}\n# {macos-\npath = /opt\n# -macos}\n",
+    )
+    .unwrap();
+
+    let tags: HashSet<String> = ["linux"].iter().map(|s| s.to_string()).collect();
+    let vars: HashMap<String, String> = [("hostname", "box"), ("email", "a@b.com")]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+
+    let (content, had_tags) = towboat::resolve_file(&file, &tags, &vars).unwrap();
+
+    assert!(had_tags);
+    assert!(content.contains("host = box"));
+    assert!(content.contains("path = /usr"));
+    assert!(content.contains("email = a@b.com"));
+    assert!(!content.contains("/opt"));
+}
+
+#[test]
+fn resolve_undefined_variable_errors() {
+    let dir = TempDir::new().unwrap();
+    let file = dir.path().join("test.conf");
+    fs::write(&file, "value = {{ undefined_var }}\n").unwrap();
+
+    let tags: HashSet<String> = HashSet::new();
+    let vars: HashMap<String, String> = HashMap::new();
+
+    let result = towboat::resolve_file(&file, &tags, &vars);
+    assert!(result.is_err());
+}
+
+#[test]
+fn sync_conflict_detection_without_force() {
+    let stow = setup_stow_dir();
+    let target = TempDir::new().unwrap();
+
+    // First sync
+    towboat::commands::sync::run(stow.path(), target.path(), None, false, false).unwrap();
+
+    // Modify BOTH source AND resolved file to create a conflict
+    fs::write(
+        stow.path().join("bash/.bashrc"),
+        "#!/bin/bash\nnew source content\n",
+    )
+    .unwrap();
+
+    let resolved_bashrc = stow.path().join(".towboat/resolved/bash/.bashrc");
+    fs::write(&resolved_bashrc, "manually edited resolved file\n").unwrap();
+
+    // Re-sync without force should report conflict
+    let result = towboat::commands::sync::run(stow.path(), target.path(), None, false, false);
+    assert!(result.is_err(), "Should error on conflict without --force");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("conflict"),
+        "Error should mention conflict: {err}"
+    );
+}
+
+#[test]
+fn sync_conflict_resolved_with_force() {
+    let stow = setup_stow_dir();
+    let target = TempDir::new().unwrap();
+
+    // First sync
+    towboat::commands::sync::run(stow.path(), target.path(), None, false, false).unwrap();
+
+    // Create a conflict (both source and resolved changed)
+    fs::write(
+        stow.path().join("bash/.bashrc"),
+        "#!/bin/bash\nnew source\n",
+    )
+    .unwrap();
+    let resolved_bashrc = stow.path().join(".towboat/resolved/bash/.bashrc");
+    fs::write(&resolved_bashrc, "edited resolved\n").unwrap();
+
+    // Force should overwrite
+    towboat::commands::sync::run(stow.path(), target.path(), None, false, true).unwrap();
+
+    let content = fs::read_to_string(target.path().join(".bashrc")).unwrap();
+    assert!(
+        content.contains("new source"),
+        "Force should re-resolve from source"
+    );
+}
+
+#[test]
+fn sync_preserves_drifted_resolved_file() {
+    let stow = setup_stow_dir();
+    let target = TempDir::new().unwrap();
+
+    // First sync
+    towboat::commands::sync::run(stow.path(), target.path(), None, false, false).unwrap();
+
+    // Edit only the resolved file (user edits via symlink)
+    let resolved_profile = stow.path().join(".towboat/resolved/bash/.profile");
+    fs::write(&resolved_profile, "user edited this\n").unwrap();
+
+    // Re-sync without force — should preserve the drift
+    towboat::commands::sync::run(stow.path(), target.path(), None, false, false).unwrap();
+
+    let content = fs::read_to_string(target.path().join(".profile")).unwrap();
+    assert_eq!(
+        content, "user edited this\n",
+        "Drifted file should be preserved when source hasn't changed"
+    );
+}
+
+#[test]
+fn lock_file_persists_across_syncs() {
+    let stow = setup_stow_dir();
+    let target = TempDir::new().unwrap();
+
+    towboat::commands::sync::run(stow.path(), target.path(), None, false, false).unwrap();
+
+    let lock_content = fs::read_to_string(stow.path().join(".towboat/towboat.lock")).unwrap();
+    assert!(lock_content.contains("version = 1"));
+    assert!(lock_content.contains("last_sync"));
+    assert!(lock_content.contains("bash/.bashrc"));
+
+    // Second sync should update lock
+    towboat::commands::sync::run(stow.path(), target.path(), None, false, false).unwrap();
+
+    let lock_content2 = fs::read_to_string(stow.path().join(".towboat/towboat.lock")).unwrap();
+    assert!(lock_content2.contains("version = 1"));
+}
