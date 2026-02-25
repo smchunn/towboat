@@ -67,9 +67,13 @@ fn walk_dir(
         let entry = entry.map_err(|e| std::io::Error::other(format!("walkdir error: {e}")))?;
         let path = entry.path();
 
-        // Skip boat.toml and .towboat directory
+        // Skip config files, internal dirs, and common OS junk
         if let Some(name) = path.file_name().and_then(|n| n.to_str())
-            && (name == "boat.toml" || name == ".towboat" || name == "towboat.toml")
+            && (name == "boat.toml"
+                || name == ".towboat"
+                || name == "towboat.toml"
+                || name == ".DS_Store"
+                || name == ".stow-local-ignore")
         {
             continue;
         }
