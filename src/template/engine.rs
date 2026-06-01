@@ -15,7 +15,12 @@ use crate::error::{Result, TowboatError};
 ///
 /// Returns an error if any referenced variable is not defined.
 pub fn render(content: &str, variables: &HashMap<String, String>) -> Result<String> {
-    let mut output = String::with_capacity(content.len());
+    // Accumulate raw bytes. The template delimiters (`$`, `{`, `}`, `\`) are all
+    // ASCII, and UTF-8 continuation bytes are always >= 0x80, so scanning by byte
+    // never misidentifies a delimiter inside a multi-byte character. Passthrough
+    // bytes must be copied verbatim — casting `byte as char` would reinterpret each
+    // byte as a Latin-1 codepoint and re-encode it, corrupting multi-byte UTF-8.
+    let mut output: Vec<u8> = Vec::with_capacity(content.len());
     let bytes = content.as_bytes();
     let len = bytes.len();
     let mut i = 0;
@@ -28,7 +33,7 @@ pub fn render(content: &str, variables: &HashMap<String, String>) -> Result<Stri
             && bytes[i + 3] == b'{'
         {
             // Escaped ${{ — emit literal ${{
-            output.push_str("${{");
+            output.extend_from_slice(b"${{");
             i += 4;
         } else if bytes[i] == b'$'
             && i + 2 < len
@@ -47,10 +52,10 @@ pub fn render(content: &str, variables: &HashMap<String, String>) -> Result<Stri
                     let var_name = var_name.trim();
 
                     if var_name.is_empty() {
-                        output.push_str("${{}}");
+                        output.extend_from_slice(b"${{}}");
                     } else {
                         match variables.get(var_name) {
-                            Some(value) => output.push_str(value),
+                            Some(value) => output.extend_from_slice(value.as_bytes()),
                             None => {
                                 return Err(TowboatError::UndefinedVariable {
                                     name: var_name.to_string(),
@@ -66,16 +71,18 @@ pub fn render(content: &str, variables: &HashMap<String, String>) -> Result<Stri
 
             if !found_close {
                 // Unterminated ${{ — pass through literally
-                output.push_str("${{");
-                output.push_str(&content[start..]);
+                output.extend_from_slice(b"${{");
+                output.extend_from_slice(&bytes[start..]);
             }
         } else {
-            output.push(bytes[i] as char);
+            output.push(bytes[i]);
             i += 1;
         }
     }
 
-    Ok(output)
+    // Safe: input is valid UTF-8 and we only ever append whole bytes from it or
+    // valid UTF-8 from variable values and ASCII literals.
+    Ok(String::from_utf8(output).expect("template render produced invalid UTF-8"))
 }
 
 #[cfg(test)]
@@ -182,5 +189,29 @@ mod tests {
         let content = "price is $50 and ${HOME}";
         let result = render(content, &vars(&[])).unwrap();
         assert_eq!(result, "price is $50 and ${HOME}");
+    }
+
+    #[test]
+    fn multibyte_utf8_passthrough_unchanged() {
+        // Nerd-font glyphs and other multi-byte UTF-8 must survive verbatim,
+        // not be reinterpreted byte-by-byte as Latin-1 (mojibake).
+        let content = "return \u{F0109} .. café — naïve 日本語 🚀";
+        let result = render(content, &vars(&[])).unwrap();
+        assert_eq!(result, content);
+        assert_eq!(result.as_bytes(), content.as_bytes());
+    }
+
+    #[test]
+    fn multibyte_utf8_around_substitution() {
+        let content = "icon \u{F0109} = ${{ name }} café 🚀";
+        let result = render(content, &vars(&[("name", "timer")])).unwrap();
+        assert_eq!(result, "icon \u{F0109} = timer café 🚀");
+    }
+
+    #[test]
+    fn multibyte_variable_value() {
+        let content = "glyph: ${{ icon }}";
+        let result = render(content, &vars(&[("icon", "\u{F0109} 日本")])).unwrap();
+        assert_eq!(result, "glyph: \u{F0109} 日本");
     }
 }
